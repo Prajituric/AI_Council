@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" id="html-root">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AI Council">
+  <link rel="manifest" href="/manifest.json">
+  <title>AI Council</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.0/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ═══════════════ LOGIN SCREEN ═══════════════ -->
+<div class="login-screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon"><i class="ti ti-topology-star-3"></i></div>
+    </div>
+    <h1 class="login-title">AI Council</h1>
+    <p class="login-sub" id="login-sub">Sign in to your account</p>
+
+    <div class="login-form">
+      <div class="login-field">
+        <label id="lbl-username">Username</label>
+        <input id="login-user" type="text" autocomplete="username" placeholder="your username" onkeydown="App.loginKey(event)">
+      </div>
+      <div class="login-field">
+        <label id="lbl-password">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="App.loginKey(event)">
+      </div>
+      <p class="login-error" id="login-error" style="display:none"></p>
+      <button class="login-btn" id="login-btn" onclick="App.login()">
+        <span id="login-btn-text">Sign in</span>
+      </button>
+    </div>
+
+    <div class="login-lang">
+      <button onclick="App.setLang('en')" id="lang-en" class="lang-btn active">EN</button>
+      <button onclick="App.setLang('ro')" id="lang-ro" class="lang-btn">RO</button>
+      <button onclick="App.setLang('es')" id="lang-es" class="lang-btn">ES</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ APP ═══════════════ -->
+<div class="layout" id="layout" style="display:none">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <div class="logo">
+        <div class="logo-icon"><i class="ti ti-topology-star-3"></i></div>
+        <span class="logo-text">AI Council</span>
+      </div>
+      <button class="btn-icon" onclick="App.newChat()" title="New chat"><i class="ti ti-edit"></i></button>
+    </div>
+
+    <div class="sidebar-search">
+      <i class="ti ti-search"></i>
+      <input id="search-inp" type="text" placeholder="Search..." oninput="App.search(this.value)">
+    </div>
+
+    <div class="sidebar-chats" id="chat-list"></div>
+
+    <div class="sidebar-bottom">
+      <!-- User badge -->
+      <div class="user-badge" id="user-badge">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-name-label">—</span>
+        <button class="btn-icon btn-xs" onclick="App.logout()" title="Logout" style="margin-left:auto">
+          <i class="ti ti-logout"></i>
+        </button>
+      </div>
+
+      <button class="sidebar-link" onclick="App.openModels()">
+        <i class="ti ti-cpu"></i><span data-i18n="models">Models</span>
+        <span class="sidebar-badge" id="badge-models">0</span>
+      </button>
+      <button class="skills-link" onclick="App.showSkillsHelp()" id="skills-link" title="Slash commands — /marketing, /engineering, /learn ...">
+        <i class="ti ti-command"></i><span>Skills & Commands</span>
+        <div class="skill-active-dot" id="skill-dot" style="display:none"></div>
+      </button>
+      <button class="sidebar-link" onclick="App.openFiles()">
+        <i class="ti ti-files"></i><span data-i18n="stored_files">Stored Files</span>
+        <span class="sidebar-badge" id="badge-files">0</span>
+      </button>
+      <button class="sidebar-link" onclick="App.openUsage()">
+        <i class="ti ti-chart-bar"></i><span>Usage &amp; Cost</span>
+      </button>
+      <button class="sidebar-link" onclick="App.openSettings()">
+        <i class="ti ti-settings"></i><span data-i18n="settings">Settings</span>
+      </button>
+      <div class="sidebar-link status-row" id="status-row">
+        <i class="ti ti-circle-filled" id="status-icon" style="font-size:8px;color:var(--tx3)"></i>
+        <span id="status-text">...</span>
+        <!-- Language switcher (compact) -->
+        <div class="lang-row" style="margin-left:auto;display:flex;gap:3px">
+          <button onclick="App.setLang('en')" class="lang-mini" id="lm-en">EN</button>
+          <button onclick="App.setLang('ro')" class="lang-mini" id="lm-ro">RO</button>
+          <button onclick="App.setLang('es')" class="lang-mini" id="lm-es">ES</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="btn-icon sidebar-toggle" onclick="App.toggleSidebar()"><i class="ti ti-layout-sidebar"></i></button>
+      <div class="model-strip" id="model-strip"></div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="btn-icon" id="btn-export" onclick="App.exportChat()" title="Export" style="display:none"><i class="ti ti-download"></i></button>
+        <button class="btn-icon" id="btn-del-chat" onclick="App.deleteActiveChat()" title="Delete chat" style="display:none"><i class="ti ti-trash"></i></button>
+      </div>
+    </header>
+
+    <main class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="welcome-logo"><i class="ti ti-topology-star-3"></i></div>
+        <h1 data-i18n="welcome_title">AI Council</h1>
+        <p data-i18n="welcome_sub">Simultaneous perspectives from multiple AI models,<br>synthesized by Claude Sonnet 4.</p>
+        <div class="suggestions">
+          <button class="suggestion" onclick="App.suggest(0)"><i class="ti ti-file-description"></i><span data-i18n="s0">SaaS PRD with AI integration</span></button>
+          <button class="suggestion" onclick="App.suggest(1)"><i class="ti ti-chart-bar"></i><span data-i18n="s1">Sales chart + Excel table</span></button>
+          <button class="suggestion" onclick="App.suggest(2)"><i class="ti ti-presentation"></i><span data-i18n="s2">8-slide investor pitch deck</span></button>
+          <button class="suggestion" onclick="App.suggest(3)"><i class="ti ti-git-branch"></i><span data-i18n="s3">Microservices architecture diagram</span></button>
+        </div>
+      </div>
+      <div id="msg-list" style="display:none"></div>
+    </main>
+
+    <div class="input-wrap">
+      <div class="file-chips" id="file-chips" style="display:none"></div>
+      <div style="position:relative">
+        <div class="slash-dropdown" id="slash-dropdown" style="display:none"></div>
+        <div class="input-box" id="input-box">
+          <button class="btn-icon btn-attach" onclick="document.getElementById('file-inp').click()" title="Attach files">
+            <i class="ti ti-paperclip"></i>
+          </button>
+          <input type="file" id="file-inp" accept="image/*,.pdf,.txt,.md,.csv,.json,.xml,.docx,.xlsx,.py,.js,.ts,.html,.css,.sql" multiple style="display:none" onchange="App.onFiles(event)">
+          <textarea id="prompt" rows="1" oninput="App.onPromptInput(this)" onkeydown="App.onKey(event)"></textarea>
+          <button class="btn-send" id="btn-send" onclick="App.send()"><i class="ti ti-arrow-up"></i></button>
+        </div>
+      </div>
+      </div>
+      <p class="input-note" id="input-note"></p>
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="overlay" id="overlay" onclick="App.closeOverlay(event)">
+  <div class="modal modal-lg" id="modal-models" style="display:none">
+    <div class="modal-head">
+      <h2><i class="ti ti-cpu"></i> <span data-i18n="models">Models</span></h2>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-sm btn-ghost" onclick="App.importModels()"><i class="ti ti-upload"></i> Import</button>
+        <button class="btn-sm btn-ghost" onclick="App.exportModels()"><i class="ti ti-download"></i> Export</button>
+        <button class="btn-icon" onclick="App.closeModals()"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="modal-body" id="body-models"></div>
+  </div>
+
+  <div class="modal modal-lg" id="modal-files" style="display:none">
+    <div class="modal-head">
+      <h2><i class="ti ti-files"></i> <span data-i18n="stored_files">Stored Files</span></h2>
+      <button class="btn-icon" onclick="App.closeModals()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" id="body-files"></div>
+  </div>
+
+  <div class="modal" id="modal-settings" style="display:none">
+    <div class="modal-head">
+      <h2><i class="ti ti-settings"></i> <span data-i18n="settings">Settings</span></h2>
+      <button class="btn-icon" onclick="App.closeModals()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" id="body-settings"></div>
+  </div>
+</div>
+
+<input type="file" id="import-inp" accept=".json" style="display:none" onchange="App.onImport(event)">
+<!-- Module split: db → api → ui → app (load order matters for browser globals) -->
+<script src="db.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script src="app.js"></script>
+<script>
+  // Register service worker for PWA offline support + home-screen install
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>

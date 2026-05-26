@@ -1,0 +1,82 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["netlify/functions/**", "skills.json"]
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Specific routes first — Netlify matches top-to-bottom, first match wins.
+# The wildcard catch-all below must stay last.
+[[redirects]]
+  from = "/api/skills"
+  to = "/.netlify/functions/skills"
+  status = 200
+
+[[redirects]]
+  from = "/api/learn-skill"
+  to = "/.netlify/functions/learn-skill"
+  status = 200
+
+[[redirects]]
+  from = "/api/evaluate"
+  to = "/.netlify/functions/evaluate"
+  status = 200
+
+[[redirects]]
+  from = "/api/call-model-stream"
+  to = "/.netlify/functions/call-model-stream"
+  status = 200
+
+[[redirects]]
+  from = "/api/synthesize-stream"
+  to = "/.netlify/functions/synthesize-stream"
+  status = 200
+
+[[redirects]]
+  from = "/api/refresh-token"
+  to = "/.netlify/functions/refresh-token"
+  status = 200
+
+[[redirects]]
+  from = "/api/evaluate-stream"
+  to = "/.netlify/functions/evaluate-stream"
+  status = 200
+
+[[redirects]]
+  from = "/api/route-question"
+  to = "/.netlify/functions/route-question"
+  status = 200
+
+[[redirects]]
+  from = "/api/enhance-prompt"
+  to = "/.netlify/functions/enhance-prompt"
+  status = 200
+
+[[redirects]]
+  from = "/api/summarize-history"
+  to = "/.netlify/functions/summarize-history"
+  status = 200
+
+[[redirects]]
+  from = "/api/factcheck-stream"
+  to = "/.netlify/functions/factcheck-stream"
+  status = 200
+
+[[redirects]]
+  from = "/api/web-search"
+  to = "/.netlify/functions/web-search"
+  status = 200
+
+# Catch-all for any other /api/* routes — must stay last
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200

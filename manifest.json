@@ -1,0 +1,33 @@
+{
+  "name": "AI Council",
+  "short_name": "AI Council",
+  "description": "Simultaneous perspectives from multiple AI models, synthesized by Claude Sonnet 4.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f0f13",
+  "theme_color": "#0f0f13",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%230f0f13'/><circle cx='96' cy='96' r='70' fill='none' stroke='%236366f1' stroke-width='6'/><circle cx='96' cy='40' r='12' fill='%23d97706'/><circle cx='148' cy='70' r='12' fill='%236366f1'/><circle cx='148' cy='122' r='12' fill='%234285F4'/><circle cx='96' cy='152' r='12' fill='%2310b981'/><circle cx='44' cy='122' r='12' fill='%23ef4444'/><circle cx='44' cy='70' r='12' fill='%23a78bfa'/><line x1='96' y1='40' x2='148' y2='70' stroke='%236366f1' stroke-width='2' opacity='0.5'/><line x1='148' y1='70' x2='148' y2='122' stroke='%236366f1' stroke-width='2' opacity='0.5'/><line x1='148' y1='122' x2='96' y2='152' stroke='%236366f1' stroke-width='2' opacity='0.5'/><line x1='96' y1='152' x2='44' y2='122' stroke='%236366f1' stroke-width='2' opacity='0.5'/><line x1='44' y1='122' x2='44' y2='70' stroke='%236366f1' stroke-width='2' opacity='0.5'/><line x1='44' y1='70' x2='96' y2='40' stroke='%236366f1' stroke-width='2' opacity='0.5'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%230f0f13'/><circle cx='256' cy='256' r='190' fill='none' stroke='%236366f1' stroke-width='14'/><circle cx='256' cy='96' r='32' fill='%23d97706'/><circle cx='406' cy='176' r='32' fill='%236366f1'/><circle cx='406' cy='336' r='32' fill='%234285F4'/><circle cx='256' cy='416' r='32' fill='%2310b981'/><circle cx='106' cy='336' r='32' fill='%23ef4444'/><circle cx='106' cy='176' r='32' fill='%23a78bfa'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "New Chat",
+      "short_name": "New Chat",
+      "description": "Start a new AI Council conversation",
+      "url": "/"
+    }
+  ]
+}

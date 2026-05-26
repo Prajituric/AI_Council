@@ -1,0 +1,7 @@
+{
+  "name": "ai-council",
+  "version": "5.0.0",
+  "description": "Multi-model AI Council — full stack, Cloudflare R2 storage, multi-file, all document types",
+  "engines": { "node": ">=18.0.0" },
+  "scripts": { "dev": "netlify dev" }
+}
