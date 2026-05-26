@@ -808,10 +808,39 @@ function envKey(p){return{anthropic:'ANTHROPIC_API_KEY',openai:'OPENAI_API_KEY',
 function fileIcon(type,name){const ext=(name||'').split('.').pop().toLowerCase();if(type?.startsWith('image/'))return'ti-photo';if(type==='application/pdf')return'ti-file-type-pdf';if(['js','ts','py','java','cpp','go','rs'].includes(ext))return'ti-file-code';if(['csv','xlsx','xls'].includes(ext))return'ti-table';if(['doc','docx'].includes(ext))return'ti-file-word';if(['json','xml','yaml','yml'].includes(ext))return'ti-file-code-2';if(['txt','md'].includes(ext))return'ti-file-text';return'ti-file';}
 
 // ══════════════════════════════════════════════════════════════
+//  MODEL IMPORT / EXPORT
+// ══════════════════════════════════════════════════════════════
+function exportModels() {
+  dl(JSON.stringify(S.models, null, 2), 'ai-council-models.json', 'application/json');
+}
+function importModels() {
+  document.getElementById('import-inp').click();
+}
+function onImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      if (!Array.isArray(parsed)) throw new Error();
+      S.models = parsed;
+      saveModels();
+      renderModelsModal();
+      alert(t('import_success').replace('{n}', parsed.length));
+    } catch {
+      alert(t('import_error'));
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+// ══════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════
 //  PUBLIC API
 // ══════════════════════════════════════════════════════════════
-const App = {
+window.App = {
   send:()=>send(), newChat, openChat, deleteChat, deleteActiveChat, exportChat,
   openModels, openSettings, openFiles, openUsage, closeModals, closeOverlay,
   exportModels, importModels, onImport, onFiles, removeFile,
