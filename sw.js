@@ -48,6 +48,9 @@ self.addEventListener('fetch', event => {
     return; // let the browser handle it normally
   }
 
+  // Skip non-http(s) requests (e.g. chrome-extension://)
+  if (!url.protocol.startsWith('http')) return;
+
   // External CDN resources — network-first, fall back to cache
   if (url.origin !== self.location.origin) {
     event.respondWith(

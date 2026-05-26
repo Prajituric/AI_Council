@@ -837,35 +837,6 @@ function onImport(e) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  MODEL IMPORT / EXPORT
-// ══════════════════════════════════════════════════════════════
-function exportModels() {
-  dl(JSON.stringify(S.models, null, 2), 'ai-council-models.json', 'application/json');
-}
-function importModels() {
-  document.getElementById('import-inp').click();
-}
-function onImport(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    try {
-      const parsed = JSON.parse(ev.target.result);
-      if (!Array.isArray(parsed)) throw new Error();
-      S.models = parsed;
-      saveModels();
-      renderModelsModal();
-      alert(t('import_success').replace('{n}', parsed.length));
-    } catch {
-      alert(t('import_error'));
-    }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
-}
-
-// ══════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════
 //  PUBLIC API
 // ══════════════════════════════════════════════════════════════
