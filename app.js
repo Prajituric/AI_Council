@@ -13,6 +13,7 @@ const TRANSLATIONS = {
     sign_in: 'Sign in', username: 'Username', password: 'Password',
     invalid_creds: 'Invalid username or password.',
     missing_fields: 'Please enter username and password.',
+    server_error: 'Server error. Please try again later.',
     signing_in: 'Signing in...',
     login_sub: 'Sign in to your account',
     // Sidebar
@@ -69,6 +70,7 @@ const TRANSLATIONS = {
     sign_in: 'Conectare', username: 'Utilizator', password: 'Parolă',
     invalid_creds: 'Utilizator sau parolă incorectă.',
     missing_fields: 'Introdu utilizatorul și parola.',
+    server_error: 'Eroare server. Încearcă din nou.',
     signing_in: 'Se conectează...', login_sub: 'Conectează-te la contul tău',
     models: 'Modele', stored_files: 'Fișiere stocate', settings: 'Setări',
     new_chat: 'Chat nou', search_placeholder: 'Caută...', logout: 'Deconectare',
@@ -112,6 +114,7 @@ const TRANSLATIONS = {
     sign_in: 'Iniciar sesión', username: 'Usuario', password: 'Contraseña',
     invalid_creds: 'Usuario o contraseña incorrectos.',
     missing_fields: 'Ingresa usuario y contraseña.',
+    server_error: 'Error del servidor. Inténtalo de nuevo.',
     signing_in: 'Iniciando sesión...', login_sub: 'Inicia sesión en tu cuenta',
     models: 'Modelos', stored_files: 'Archivos guardados', settings: 'Configuración',
     new_chat: 'Nuevo chat', search_placeholder: 'Buscar...', logout: 'Cerrar sesión',
@@ -659,8 +662,8 @@ async function login(){
     const res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
     const data=await res.json();
     if(!data.ok){
-      errEl.textContent=t(data.error==='invalid_credentials'?'invalid_creds':'missing_fields');
-      errEl.style.display='block';btn.disabled=false;btnTxt.textContent=t('sign_in');return;
+      const msg=res.status>=500?t('server_error'):t(data.error==='invalid_credentials'?'invalid_creds':'missing_fields');
+      errEl.textContent=msg;errEl.style.display='block';btn.disabled=false;btnTxt.textContent=t('sign_in');return;
     }
     AUTH.save({userId:data.userId,userName:data.userName,token:data.token});
     await initApp();
