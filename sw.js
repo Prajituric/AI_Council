@@ -1,5 +1,5 @@
 /* ================================================================
-   sw.js — AI Council Service Worker (PWA)
+   sw.js — GenX Service Worker (PWA)
 
    Strategy:
    - App shell (HTML, CSS, JS, fonts): cache-first, update in background.
@@ -75,11 +75,11 @@ self.addEventListener('fetch', event => {
 
       // Return cached immediately, update in background; or wait for network
       return cached || networkFetch || new Response(
-        '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AI Council — Offline</title>' +
+        '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>GenX — Offline</title>' +
         '<meta name="viewport" content="width=device-width,initial-scale=1">' +
         '<style>body{background:#0f0f13;color:#e8e8f2;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px}' +
         'h1{font-size:24px;font-weight:600}p{color:#8888aa;font-size:14px;text-align:center}</style></head>' +
-        '<body><h1>⚡ AI Council</h1><p>You\'re offline.<br>Reconnect to continue your conversation.</p></body></html>',
+        '<body><h1>⚡ GenX</h1><p>You\'re offline.<br>Reconnect to continue your conversation.</p></body></html>',
         { headers: { 'Content-Type': 'text/html' } }
       );
     })

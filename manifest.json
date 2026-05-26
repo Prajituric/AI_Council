@@ -1,6 +1,6 @@
 {
-  "name": "AI Council",
-  "short_name": "AI Council",
+  "name": "GenX",
+  "short_name": "GenX",
   "description": "Simultaneous perspectives from multiple AI models, synthesized by Claude Sonnet 4.",
   "start_url": "/",
   "display": "standalone",
@@ -26,7 +26,7 @@
     {
       "name": "New Chat",
       "short_name": "New Chat",
-      "description": "Start a new AI Council conversation",
+      "description": "Start a new GenX conversation",
       "url": "/"
     }
   ]

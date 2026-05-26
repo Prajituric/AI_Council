@@ -1,5 +1,5 @@
 /* ================================================================
-   AI Council v6 — app.js
+   GenX v6 — app.js
    Multi-tenancy · Background file jobs · i18n (EN/RO/ES)
    ================================================================ */
 'use strict';
@@ -21,13 +21,13 @@ const TRANSLATIONS = {
     logout: 'Logout', no_chats: 'No conversations yet.\nSend your first message.',
     today: 'Today', yesterday: 'Yesterday', this_week: 'This week', older: 'Older',
     // Welcome
-    welcome_title: 'AI Council', welcome_sub: 'Simultaneous perspectives from multiple AI models,\nsynthesized by Claude Sonnet 4.',
+    welcome_title: 'GenX', welcome_sub: 'Simultaneous perspectives from multiple AI models,\nsynthesized by Claude Sonnet 4.',
     s0: 'SaaS PRD with AI integration',
     s1: 'Sales chart + Excel table',
     s2: '8-slide investor pitch deck',
     s3: 'Microservices architecture diagram',
     // Input
-    input_placeholder: 'Message AI Council... (attach multiple files)',
+    input_placeholder: 'Message GenX... (attach multiple files)',
     input_note_suffix: ' · diagrams · charts · PPTX · DOCX · XLSX · PDF',
     no_models: 'No models active',
     // File chips
@@ -74,12 +74,12 @@ const TRANSLATIONS = {
     new_chat: 'Chat nou', search_placeholder: 'Caută...', logout: 'Deconectare',
     no_chats: 'Nicio conversație.\nTrimite primul mesaj.',
     today: 'Azi', yesterday: 'Ieri', this_week: 'Această săptămână', older: 'Mai vechi',
-    welcome_title: 'AI Council', welcome_sub: 'Perspective simultane de la mai multe modele AI,\nsintetizate de Claude Sonnet 4.',
+    welcome_title: 'GenX', welcome_sub: 'Perspective simultane de la mai multe modele AI,\nsintetizate de Claude Sonnet 4.',
     s0: 'PRD complet pentru o aplicație SaaS cu AI',
     s1: 'Grafic vânzări + tabel Excel',
     s2: 'Pitch deck investitori — 8 slide-uri PPTX',
     s3: 'Diagramă arhitectură microservicii (Mermaid)',
-    input_placeholder: 'Mesaj pentru AI Council... (atașează mai multe fișiere)',
+    input_placeholder: 'Mesaj pentru GenX... (atașează mai multe fișiere)',
     input_note_suffix: ' · diagrame · grafice · PPTX · DOCX · XLSX · PDF',
     no_models: 'Niciun model activ',
     uploading: 'Se uploadează...', extracting: 'Se extrage textul...', ready: 'Gata', error: 'Eroare',
@@ -117,12 +117,12 @@ const TRANSLATIONS = {
     new_chat: 'Nuevo chat', search_placeholder: 'Buscar...', logout: 'Cerrar sesión',
     no_chats: 'Sin conversaciones.\nEnvía tu primer mensaje.',
     today: 'Hoy', yesterday: 'Ayer', this_week: 'Esta semana', older: 'Más antiguo',
-    welcome_title: 'AI Council', welcome_sub: 'Perspectivas simultáneas de múltiples modelos de IA,\nsintetizadas por Claude Sonnet 4.',
+    welcome_title: 'GenX', welcome_sub: 'Perspectivas simultáneas de múltiples modelos de IA,\nsintetizadas por Claude Sonnet 4.',
     s0: 'PRD completo para app SaaS con IA',
     s1: 'Gráfico de ventas + tabla Excel',
     s2: 'Pitch deck de 8 diapositivas para inversores',
     s3: 'Diagrama de arquitectura de microservicios',
-    input_placeholder: 'Mensaje para AI Council... (adjunta varios archivos)',
+    input_placeholder: 'Mensaje para GenX... (adjunta varios archivos)',
     input_note_suffix: ' · diagramas · gráficos · PPTX · DOCX · XLSX · PDF',
     no_models: 'Sin modelos activos',
     uploading: 'Subiendo...', extracting: 'Extrayendo...', ready: 'Listo', error: 'Error',
@@ -571,7 +571,7 @@ async function deleteActiveChat(){if(S.activeChatId)await deleteChat(S.activeCha
 function exportChat(){
   if(!S.messages.length)return;
   const chat=S.chats.find(c=>c.id===S.activeChatId);
-  let md=`# ${chat?.title||'Chat'}\n_AI Council — ${new Date().toLocaleString()}_\n\n---\n\n`;
+  let md=`# ${chat?.title||'Chat'}\n_GenX — ${new Date().toLocaleString()}_\n\n---\n\n`;
   S.messages.forEach(msg=>{
     const v=msg.variants[msg.activeVariant];
     (v.attachments||[]).forEach(a=>{md+=`**[File: ${a.name}]**\n\n`;});

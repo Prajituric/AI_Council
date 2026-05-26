@@ -7,9 +7,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="AI Council">
+  <meta name="apple-mobile-web-app-title" content="GenX">
   <link rel="manifest" href="/manifest.json">
-  <title>AI Council</title>
+  <title>GenX</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.14.0/dist/tabler-icons.min.css">
@@ -31,7 +31,7 @@
     <div class="login-logo">
       <div class="logo-icon"><i class="ti ti-topology-star-3"></i></div>
     </div>
-    <h1 class="login-title">AI Council</h1>
+    <h1 class="login-title">GenX</h1>
     <p class="login-sub" id="login-sub">Sign in to your account</p>
 
     <div class="login-form">
@@ -63,8 +63,12 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
       <div class="logo">
-        <div class="logo-icon"><i class="ti ti-topology-star-3"></i></div>
-        <span class="logo-text">AI Council</span>
+        <div class="logo-icon">
+          <svg width="16" height="14" viewBox="0 0 16 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 1L14.5 12.5H1.5L8 1Z" stroke="#93c5fd" stroke-width="1.5" stroke-linejoin="round" fill="rgba(59,130,246,.15)"/>
+          </svg>
+        </div>
+        <span class="logo-text">GenX</span>
       </div>
       <button class="btn-icon" onclick="App.newChat()" title="New chat"><i class="ti ti-edit"></i></button>
     </div>
@@ -129,8 +133,13 @@
 
     <main class="messages" id="messages">
       <div class="welcome" id="welcome">
-        <div class="welcome-logo"><i class="ti ti-topology-star-3"></i></div>
-        <h1 data-i18n="welcome_title">AI Council</h1>
+        <div class="welcome-logo">
+          <svg width="32" height="28" viewBox="0 0 32 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 2L30 26H2L16 2Z" stroke="#5b9bd5" stroke-width="1.8" stroke-linejoin="round" fill="rgba(59,130,246,.12)"/>
+            <path d="M16 8L25 24H7L16 8Z" stroke="#3b82f6" stroke-width="1.2" stroke-linejoin="round" fill="rgba(59,130,246,.08)"/>
+          </svg>
+        </div>
+        <h1 data-i18n="welcome_title">GenX</h1>
         <p data-i18n="welcome_sub">Simultaneous perspectives from multiple AI models,<br>synthesized by Claude Sonnet 4.</p>
         <div class="suggestions">
           <button class="suggestion" onclick="App.suggest(0)"><i class="ti ti-file-description"></i><span data-i18n="s0">SaaS PRD with AI integration</span></button>
