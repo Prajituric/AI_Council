@@ -808,39 +808,112 @@ function envKey(p){return{anthropic:'ANTHROPIC_API_KEY',openai:'OPENAI_API_KEY',
 function fileIcon(type,name){const ext=(name||'').split('.').pop().toLowerCase();if(type?.startsWith('image/'))return'ti-photo';if(type==='application/pdf')return'ti-file-type-pdf';if(['js','ts','py','java','cpp','go','rs'].includes(ext))return'ti-file-code';if(['csv','xlsx','xls'].includes(ext))return'ti-table';if(['doc','docx'].includes(ext))return'ti-file-word';if(['json','xml','yaml','yml'].includes(ext))return'ti-file-code-2';if(['txt','md'].includes(ext))return'ti-file-text';return'ti-file';}
 
 // ══════════════════════════════════════════════════════════════
-//  MODEL IMPORT / EXPORT
+//  MODEL MANAGEMENT (settings modal helpers)
 // ══════════════════════════════════════════════════════════════
+// Toggle a model enabled/disabled
+function _tog(id, checked) {
+  const m = S.models.find(x => x.id === id);
+  if (m) { m.enabled = checked; saveModels(); renderModelsModal(); }
+}
+// Update a model field inline
+function _fld(id, field, value) {
+  const m = S.models.find(x => x.id === id);
+  if (m) { m[field] = value; saveModels(); }
+}
+// Remove a model from the council
+function _rm(id) {
+  if (!confirm('Remove this model from the council?')) return;
+  S.models = S.models.filter(x => x.id !== id);
+  saveModels(); renderModelsModal();
+}
+// Add a model from the built-in catalog
+function _addC(catalogId) {
+  const c = CATALOG.find(x => x.id === catalogId);
+  if (!c || S.models.find(x => x.id === c.id)) return;
+  S.models.push({ ...c, enabled: true });
+  saveModels(); renderModelsModal();
+}
+// Add a blank custom model
+function _addCustom() {
+  const id = 'custom-' + Date.now();
+  S.models.push({
+    id, name: 'Custom Model', role: 'Assistant',
+    provider: 'custom', accent: '#8888aa',
+    baseUrl: '', modelName: '', enabled: true, hasVision: false,
+  });
+  saveModels(); renderModelsModal();
+}
+// Re-fetch /api/config to refresh provider status indicators
+async function _recheck() {
+  try {
+    const r = await fetch('/api/config', { headers: AUTH.headers() });
+    if (r.ok) { const d = await r.json(); S.cfg = { ...S.cfg, ...d }; }
+  } catch {}
+  renderModelsModal(); renderSettings();
+}
+// Connect to Supabase using the URL/key entered in Settings
+function _connDB() {
+  const url  = document.getElementById('sb-url')?.value.trim()  || LS.get('sb_url','');
+  const anon = document.getElementById('sb-anon')?.value.trim() || LS.get('sb_anon','');
+  if (!url || !anon) { showToast('⚠ Enter Supabase URL and Anon Key first'); return; }
+  try {
+    S.sbClient = supabase.createClient(url, anon);
+    LS.set('sb_url', url); LS.set('sb_anon', anon);
+    showToast('✓ Supabase connected');
+    renderSettings();
+  } catch(e) { showToast('❌ Connection failed: ' + e.message); }
+}
+// Export all local data as a JSON backup
+function _backup() {
+  const data = {
+    version: 1,
+    exported: new Date().toISOString(),
+    models:   LS.get('models_v6', []),
+    chats:    S.chats,
+    messages: Object.fromEntries(
+      S.chats.map(c => [c.id, LS.get('chat_' + c.id, [])])
+    ),
+  };
+  dl(JSON.stringify(data, null, 2), 'ai-council-backup.json', 'application/json');
+}
+// Wipe all local data (confirm required)
+function _clearAll() {
+  if (!confirm('Delete ALL local chats and settings? This cannot be undone.')) return;
+  localStorage.clear();
+  showToast('🗑 All local data cleared — reloading…');
+  setTimeout(() => location.reload(), 1200);
+}
+// Export current model config as JSON
 function exportModels() {
   dl(JSON.stringify(S.models, null, 2), 'ai-council-models.json', 'application/json');
 }
+// Open file picker to import a saved model config
 function importModels() {
-  document.getElementById('import-inp').click();
+  document.getElementById('import-inp')?.click();
 }
+// Handle model import file selected
 function onImport(e) {
-  const file = e.target.files[0];
+  const file = e.target.files?.[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = ev => {
+  reader.onload = (ev) => {
     try {
       const parsed = JSON.parse(ev.target.result);
-      if (!Array.isArray(parsed)) throw new Error();
+      if (!Array.isArray(parsed)) throw new Error('Expected an array');
       S.models = parsed;
       saveModels();
       renderModelsModal();
-      alert(t('import_success').replace('{n}', parsed.length));
-    } catch {
-      alert(t('import_error'));
-    }
+      showToast('✓ Models imported');
+    } catch(err) { showToast('❌ Import failed: ' + err.message); }
+    e.target.value = '';
   };
   reader.readAsText(file);
-  e.target.value = '';
 }
 
 // ══════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════
 //  PUBLIC API
 // ══════════════════════════════════════════════════════════════
-window.App = {
+const App = {
   send:()=>send(), newChat, openChat, deleteChat, deleteActiveChat, exportChat,
   openModels, openSettings, openFiles, openUsage, closeModals, closeOverlay,
   exportModels, importModels, onImport, onFiles, removeFile,

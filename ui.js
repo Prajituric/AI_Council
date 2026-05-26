@@ -602,7 +602,6 @@ function renderModelsModal(){
 // ══════════════════════════════════════════════════════════════
 //  SETTINGS MODAL
 // ══════════════════════════════════════════════════════════════
-function openSettings(){renderSettings();document.getElementById('modal-settings').style.display='flex';document.getElementById('overlay').classList.add('open');}
 function renderSettings(){
   const body=document.getElementById('body-settings');
   const sbUrl=LS.get('sb_url','');const sbAnon=LS.get('sb_anon','');
@@ -639,7 +638,7 @@ function renderSettings(){
       <input type="checkbox" id="login-item-chk" style="width:16px;height:16px;cursor:pointer"
         onchange="window.electronAPI.setLoginItem(this.checked)">
     </div>
-    <script>window.electronAPI.getLoginItem().then(v=>{const el=document.getElementById('login-item-chk');if(el)el.checked=v;});</script>
+    <div id="login-item-loading" style="display:none"></div>
     <div style="font-size:11px;color:var(--tx3);margin-top:2px">Shortcut: Cmd/Ctrl+Shift+A — show/hide window from anywhere</div>
   </div>` : ''}`;
 }
@@ -651,6 +650,17 @@ function closeModals(){
   ['modal-models','modal-files','modal-settings'].forEach(id=>{document.getElementById(id).style.display='none';});
   document.getElementById('overlay').classList.remove('open');
   renderStrip();renderSidebar();
+}
+function openSettings(){
+  renderSettings();
+  document.getElementById('modal-settings').style.display='flex';
+  document.getElementById('overlay').classList.add('open');
+  // Populate Electron login-item checkbox (can't use <script> inside innerHTML)
+  if(window.electronAPI){
+    window.electronAPI.getLoginItem().then(v=>{
+      const el=document.getElementById('login-item-chk');if(el)el.checked=v;
+    }).catch(()=>{});
+  }
 }
 function closeOverlay(e){if(e.target===document.getElementById('overlay'))closeModals();}
 
