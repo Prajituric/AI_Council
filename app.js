@@ -1390,3 +1390,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   // Otherwise the login screen is visible by default (HTML default)
 });
+
+// Expose App on window — HTML inline onclick handlers need window.App
+window.App = App;
