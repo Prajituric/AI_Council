@@ -1,4 +1,4 @@
-# ⚡ AI Council v5
+# ⚡ AI Council
 
 Multi-model AI Council — Cloudflare R2 storage, toate tipurile de documente, fișiere multiple, chei exclusiv pe server, multi-device Supabase.
 
