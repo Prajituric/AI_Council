@@ -8,7 +8,7 @@
    - Offline fallback: serves a minimal offline page if everything fails.
    ================================================================ */
 
-const CACHE_NAME   = 'ai-council-v5';
+const CACHE_NAME   = 'ai-council-v6';
 const OFFLINE_URL  = '/offline.html';
 
 // Static assets to pre-cache on install
