@@ -37,8 +37,19 @@ const MODEL_NAME_TO_ID = {
   'Mistral Large':    'mistral',
 };
 
-// Default role-based affinity scores (used when no performance data exists)
-// These are reasonable priors based on each model's known strengths.
+// Model descriptions — used by the LLM selector to understand each model's strengths
+const MODEL_DESCRIPTIONS = {
+  'claude':     'Claude Opus 4.6 — exceptional deep reasoning, synthesis, nuanced writing, complex multi-step analysis',
+  'gpt4o':      'GPT-4o — strong at coding, structured problem-solving, vision/multimodal tasks, broad world knowledge',
+  'gpt4o-mini': 'GPT-4o Mini — fast and cost-effective for straightforward questions, light tasks',
+  'gemini':     'Gemini 2.0 Flash — excellent for research, science, factual accuracy, technical documentation',
+  'deepseek':   'DeepSeek V3 — top-tier mathematics, algorithms, code optimization, logical/formal reasoning',
+  'grok':       'Grok 3 — real-time web knowledge, current events, creative writing, pop culture',
+  'groq-llama': 'Llama 3.3 (Groq) — ultra-fast responses, general Q&A, conversational tasks',
+  'mistral':    'Mistral Large — multilingual content, European regulatory context, business writing',
+};
+
+// Fallback affinity scores (used only when LLM selection fails)
 const ROLE_AFFINITY = {
   'claude':     { code: 8, research: 8, creative: 9, analysis: 9, math: 7, other: 8 },
   'gpt4o':      { code: 9, research: 8, creative: 8, analysis: 8, math: 8, other: 8 },
@@ -120,48 +131,84 @@ exports.handler = async (event) => {
     } catch { /* ignore, use priors */ }
   }
 
-  // ── Step 3: Score each available model ───────────────────────
-  const scores = {};
+  // ── Step 3: LLM-based intelligent model selection ────────────
+  // Ask Groq (fast + cheap) to read the actual question and pick the
+  // best 2-3 models based on their specific strengths and the question content.
+  // Falls back to affinity-score heuristic if Groq is unavailable.
+  let selectedModelIds = [];
+  let reason = '';
   let hasRealData = false;
 
-  for (const modelId of availableModelIds) {
-    // Find model name from ID mapping (reverse lookup)
-    const modelName = Object.entries(MODEL_NAME_TO_ID).find(([, id]) => id === modelId)?.[0];
-    const perf = modelName ? perfData[modelName] : null;
-    const prior = ROLE_AFFINITY[modelId] || { [questionType]: 7 };
+  const modelList = availableModelIds
+    .map(id => `- ${id}: ${MODEL_DESCRIPTIONS[id] || id}`)
+    .join('\n');
 
-    if (perf && perf.sample_count >= MIN_SAMPLES_FOR_DATA) {
-      // Weight: 70% real performance data, 30% role affinity prior
-      scores[modelId] = (perf.avg_score * 0.7) + ((prior[questionType] || 7) * 0.3);
-      hasRealData = true;
-    } else {
-      // Pure prior — role affinity
-      scores[modelId] = prior[questionType] || 7;
-    }
+  if (groqKey && availableModelIds.length > 2) {
+    try {
+      const selectorRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          max_tokens: 120,
+          temperature: 0.1,
+          messages: [{
+            role: 'user',
+            content:
+              `You are a router for a multi-model AI system. Select the best 2-3 models for this specific question.\n\n` +
+              `Question: "${question.slice(0, 500)}"\n` +
+              `Question type: ${questionType}\n\n` +
+              `Available models:\n${modelList}\n\n` +
+              `Rules:\n` +
+              `- Pick 2-3 models that would give the most VALUABLE and DIVERSE perspectives\n` +
+              `- Prefer models with a clear strength advantage for this question's domain\n` +
+              `- Avoid picking models that would give nearly identical responses\n` +
+              `- ONLY output valid JSON, no other text\n\n` +
+              `Respond with ONLY: {"selected":["id1","id2"],"reason":"one short sentence"}`,
+          }],
+          response_format: { type: 'json_object' },
+        }),
+      });
+      const selData = await selectorRes.json();
+      const parsed = JSON.parse(selData.choices?.[0]?.message?.content || '{}');
+      const candidates = (parsed.selected || []).filter(id => availableModelIds.includes(id));
+      if (candidates.length >= MIN_MODELS_TO_SELECT) {
+        selectedModelIds = candidates.slice(0, MAX_MODELS_TO_SELECT);
+        reason = parsed.reason || `AI-selected for ${questionType} question`;
+      }
+    } catch { /* fall through to affinity scoring */ }
   }
 
-  // ── Step 4: Select top models ─────────────────────────────────
-  const sorted = Object.entries(scores)
-    .sort(([, a], [, b]) => b - a);
-
-  // Always include at least MIN_MODELS_TO_SELECT, up to MAX_MODELS_TO_SELECT
-  // Include models within 1.0 score of the top scorer (up to max)
-  let selectedModelIds = [];
-  if (sorted.length > 0) {
-    const topScore = sorted[0][1];
-    for (const [id, score] of sorted) {
-      if (selectedModelIds.length < MIN_MODELS_TO_SELECT ||
-          (selectedModelIds.length < MAX_MODELS_TO_SELECT && topScore - score <= 1.0)) {
-        selectedModelIds.push(id);
+  // ── Step 4: Affinity-score fallback (if LLM selection failed) ─
+  if (selectedModelIds.length < MIN_MODELS_TO_SELECT) {
+    const scores = {};
+    for (const modelId of availableModelIds) {
+      const modelName = Object.entries(MODEL_NAME_TO_ID).find(([, id]) => id === modelId)?.[0];
+      const perf = modelName ? perfData[modelName] : null;
+      const prior = ROLE_AFFINITY[modelId] || { [questionType]: 7 };
+      if (perf && perf.sample_count >= MIN_SAMPLES_FOR_DATA) {
+        scores[modelId] = (perf.avg_score * 0.7) + ((prior[questionType] || 7) * 0.3);
+        hasRealData = true;
+      } else {
+        scores[modelId] = prior[questionType] || 7;
       }
     }
-  } else {
-    selectedModelIds = availableModelIds.slice(0, MAX_MODELS_TO_SELECT);
+    const sorted = Object.entries(scores).sort(([, a], [, b]) => b - a);
+    if (sorted.length > 0) {
+      const topScore = sorted[0][1];
+      for (const [id, score] of sorted) {
+        if (selectedModelIds.length < MIN_MODELS_TO_SELECT ||
+            (selectedModelIds.length < MAX_MODELS_TO_SELECT && topScore - score <= 1.0)) {
+          selectedModelIds.push(id);
+        }
+      }
+    } else {
+      selectedModelIds = availableModelIds.slice(0, MAX_MODELS_TO_SELECT);
+    }
+    reason = hasRealData
+      ? `Performance data (${questionType}): top ${selectedModelIds.length} models`
+      : `Role affinity for "${questionType}"`;
   }
-
-  const reason = hasRealData
-    ? `Performance data (${questionType}): routing to top ${selectedModelIds.length} models`
-    : `No performance data yet for "${questionType}" — using role affinity priors`;
 
   return respond({
     questionType,

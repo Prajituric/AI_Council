@@ -249,7 +249,34 @@ function exchangeHTML(msg) {
       </div>`;
     }
 
-    councilHTML = `<div class="council-label">${t('council_active')}</div>${enhancementHTML}${routingHTML}${webHTML}<div class="council-grid">${cards}</div>`;
+    const isLoading = responses.some(r => r.loading);
+    const doneCount = responses.filter(r => !r.loading).length;
+    const errCount  = responses.filter(r => r.error).length;
+    // Force-expand while any model is still loading so progress is visible.
+    // Once all done, respect v.councilExpanded (defaults false = collapsed).
+    const expanded = isLoading || v.councilExpanded === true;
+
+    const statusPart = isLoading
+      ? `<i class="ti ti-loader spin" style="font-size:11px"></i> ${doneCount}/${responses.length} responding`
+      : `${doneCount} model${doneCount !== 1 ? 's' : ''} responded${errCount ? ` · <span style="color:var(--red)">${errCount} error${errCount !== 1 ? 's' : ''}</span>` : ''}`;
+
+    const viewBtn = !isLoading
+      ? `<button onclick="App.toggleCouncil('${msg.id}')"
+          style="padding:1px 8px;border-radius:20px;border:1px solid var(--bd);background:none;color:var(--tx3);font-size:10px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;transition:all .1s;flex-shrink:0"
+          onmouseover="this.style.color='var(--tx)'" onmouseout="this.style.color='var(--tx3)'"
+          title="${expanded ? 'Collapse council' : 'View council responses'}">
+          ${expanded ? 'hide' : 'view'} <i class="ti ti-chevron-${expanded ? 'up' : 'down'}" style="font-size:10px"></i>
+        </button>`
+      : '';
+
+    councilHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${expanded ? '10px' : '4px'}">
+        <span style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--tx3);font-weight:500;flex-shrink:0">${t('council_active')}</span>
+        <span style="font-size:10px;color:var(--tx3);display:inline-flex;align-items:center;gap:4px">${statusPart}</span>
+        ${viewBtn}
+        <div style="flex:1;height:1px;background:var(--bd)"></div>
+      </div>
+      ${expanded ? `${enhancementHTML}${routingHTML}${webHTML}<div class="council-grid">${cards}</div>` : ''}`;
   }
 
   let synthHTML = '';

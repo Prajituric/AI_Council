@@ -34,7 +34,7 @@ const TRANSLATIONS = {
     uploading: 'Uploading...', extracting: 'Extracting...', ready: 'Ready', error: 'Error',
     // Council
     council_active: 'Active council', synthesis_title: 'Moderator — Final Synthesis',
-    synthesizing: 'Synthesizing...', claude_sonnet: 'Claude Sonnet 4',
+    synthesizing: 'Synthesizing...', claude_sonnet: 'Claude Opus 4.6',
     // Actions
     edit: 'Edit', retry: 'Retry', cancel: 'Cancel', send_variant: 'Send variant',
     // Doc buttons
@@ -84,7 +84,7 @@ const TRANSLATIONS = {
     no_models: 'Niciun model activ',
     uploading: 'Se uploadează...', extracting: 'Se extrage textul...', ready: 'Gata', error: 'Eroare',
     council_active: 'Consiliu activ', synthesis_title: 'Moderator — Sinteză Finală',
-    synthesizing: 'Se sintetizează...', claude_sonnet: 'Claude Sonnet 4',
+    synthesizing: 'Se sintetizează...', claude_sonnet: 'Claude Opus 4.6',
     edit: 'Editează', retry: 'Retry', cancel: 'Anulează', send_variant: 'Trimite varianta',
     copy: 'Copiază', download: 'Descarcă',
     api_keys_status: 'Chei API — Status pe server',
@@ -127,7 +127,7 @@ const TRANSLATIONS = {
     no_models: 'Sin modelos activos',
     uploading: 'Subiendo...', extracting: 'Extrayendo...', ready: 'Listo', error: 'Error',
     council_active: 'Consejo activo', synthesis_title: 'Moderador — Síntesis Final',
-    synthesizing: 'Sintetizando...', claude_sonnet: 'Claude Sonnet 4',
+    synthesizing: 'Sintetizando...', claude_sonnet: 'Claude Opus 4.6',
     edit: 'Editar', retry: 'Reintentar', cancel: 'Cancelar', send_variant: 'Enviar variante',
     copy: 'Copiar', download: 'Descargar',
     api_keys_status: 'Claves API — Estado en servidor',
@@ -997,8 +997,8 @@ const App = {
   sendClarification, overrideRouting,
   // Skill suggestion
   acceptSkillSuggestion, dismissSkillSuggestion,
-  // Prompt enhancement + card collapse + web sources
-  toggleEnhancement, revertEnhancement, toggleCard, toggleWebSources,
+  // Prompt enhancement + card collapse + web sources + council toggle
+  toggleEnhancement, revertEnhancement, toggleCard, toggleWebSources, toggleCouncil,
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -1433,6 +1433,15 @@ function toggleCard(msgId, modelId) {
   const v = msg.variants[msg.activeVariant];
   const r = (v.responses || []).find(r => r.modelId === modelId);
   if (r) { r.collapsed = !r.collapsed; patchMsg(msg); }
+}
+
+// ── Council section expand/collapse ──────────────────────────
+function toggleCouncil(msgId) {
+  const msg = S.messages.find(m => m.id === msgId);
+  if (!msg) return;
+  const v = msg.variants[msg.activeVariant];
+  v.councilExpanded = !v.councilExpanded;
+  patchMsg(msg);
 }
 
 // ── Silent token refresh ──────────────────────────────────────
