@@ -162,16 +162,27 @@ function t(key, vars) {
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const k = el.getAttribute('data-i18n');
-    el.textContent = t(k);
+    const text = t(k);
+    // Use innerHTML so \n renders as <br> (e.g. welcome_sub, no_chats)
+    if (text.includes('\n')) {
+      el.innerHTML = text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    } else {
+      el.textContent = text;
+    }
   });
   const prompt = document.getElementById('prompt');
   if (prompt) prompt.placeholder = t('input_placeholder');
   const si = document.getElementById('search-inp');
   if (si) si.placeholder = t('search_placeholder');
-  document.getElementById('login-sub').textContent = t('login_sub');
-  document.getElementById('lbl-username').textContent = t('username');
-  document.getElementById('lbl-password').textContent = t('password');
-  document.getElementById('login-btn-text').textContent = t('sign_in');
+  // Login screen elements
+  const loginSub = document.getElementById('login-sub');
+  if (loginSub) loginSub.textContent = t('login_sub');
+  const lblUser = document.getElementById('lbl-username');
+  if (lblUser) lblUser.textContent = t('username');
+  const lblPass = document.getElementById('lbl-password');
+  if (lblPass) lblPass.textContent = t('password');
+  const btnTxt = document.getElementById('login-btn-text');
+  if (btnTxt && !document.getElementById('login-btn')?.disabled) btnTxt.textContent = t('sign_in');
   // lang buttons highlight
   ['en','ro','es'].forEach(l => {
     const lb = document.getElementById('lang-'+l);
@@ -290,7 +301,13 @@ function loadModels() {
   LS.set('models_v6', S.models);
 }
 function saveModels() { LS.set('models_v6', S.models); }
-function activeModels() { return S.models.filter(m=>m.enabled&&S.cfg.providers[m.provider]); }
+function activeModels() {
+  // If the server has reported at least one key, filter by provider key presence.
+  // If NO keys are configured at all (first deploy, config failed, etc.) show all
+  // enabled models so the input note isn't "No models active" before setup is done.
+  const anyKey = Object.values(S.cfg.providers || {}).some(Boolean);
+  return S.models.filter(m => m.enabled && (anyKey ? !!S.cfg.providers[m.provider] : true));
+}
 
 // ══════════════════════════════════════════════════════════════
 //  FILE UPLOAD + BACKGROUND EXTRACTION
@@ -680,8 +697,9 @@ async function logout(){
   document.getElementById('login-user').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-btn').disabled=false;
-  document.getElementById('login-btn-text').textContent=t('sign_in');
   document.getElementById('login-error').style.display='none';
+  // Re-apply i18n so login screen shows in the currently selected language
+  applyI18n();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -961,7 +979,12 @@ async function initApp() {
       S.cfg = { ...S.cfg, ...d };
       // Auto-initialize Supabase from server-provided env vars (no manual setup required)
       if (d.supabase?.ok && !S.sbClient) {
-        try { S.sbClient = supabase.createClient(d.supabase.url, d.supabase.anonKey); } catch {}
+        try {
+          let sbUrl = (d.supabase.url || '').trim();
+          if (sbUrl && !sbUrl.startsWith('http')) sbUrl = 'https://' + sbUrl;
+          const sbKey = (d.supabase.anonKey || '').trim();
+          if (sbUrl && sbKey) S.sbClient = supabase.createClient(sbUrl, sbKey);
+        } catch {}
       }
     }
   } catch {}

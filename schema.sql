@@ -9,7 +9,7 @@ create extension if not exists "pgcrypto";
 create table if not exists chats (
   id          uuid primary key default gen_random_uuid(),
   user_id     text not null default 'default',
-  title       text not null default 'Chat nou',
+  title       text not null default 'New chat',
   model_ids   text[] default '{}',
   msg_count   integer default 0,
   preview     text default '',

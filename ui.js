@@ -715,7 +715,15 @@ async function openUsage() {
       .eq('user_id', AUTH.userId)
       .gte('created_at', monthStart);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Common cause: table doesn't exist (schema.sql not run yet)
+      const isTableMissing = error.message?.includes('usage_log') || error.code === '42P01';
+      throw new Error(
+        isTableMissing
+          ? 'Table "usage_log" not found. Run schema.sql in your Supabase SQL Editor first.'
+          : error.message
+      );
+    }
 
     if (!data?.length) {
       body.innerHTML = '<div class="note" style="text-align:center;padding:40px;color:var(--tx2)">No usage recorded this month.</div>';
@@ -814,6 +822,16 @@ async function openUsage() {
       }
     }
   } catch(e) {
-    body.innerHTML = '<div class="note" style="color:var(--red);padding:20px">Error loading usage: ' + esc(e.message) + '</div>';
+    const isNetwork = e instanceof TypeError && e.message.toLowerCase().includes('fetch');
+    body.innerHTML = `
+      <div class="note" style="color:var(--red);padding:20px">
+        <strong>Error loading usage:</strong> ${esc(e.message)}
+        ${isNetwork ? `<br><br><span style="color:var(--tx2);font-size:12px">
+          This is usually a network error reaching Supabase.<br>
+          Check: (1) your <code>SUPABASE_URL</code> env var starts with <code>https://</code>,
+          (2) <code>SUPABASE_ANON_KEY</code> is correct,
+          (3) you have run <code>schema.sql</code> in the Supabase SQL Editor.
+        </span>` : ''}
+      </div>`;
   }
 }
