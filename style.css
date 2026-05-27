@@ -147,6 +147,7 @@ a { color: var(--ac); }
 .mcard-text::-webkit-scrollbar { width: 3px; }
 .mcard-text::-webkit-scrollbar-thumb { background: var(--bd); border-radius: 2px; }
 .mcard-err { font-size: 12px; color: var(--red); display: flex; gap: 5px; align-items: flex-start; line-height: 1.5; }
+.mcard-err-access { color: var(--tx2); background: rgba(234,179,8,.06); border: 1px solid rgba(234,179,8,.2); border-radius: 8px; padding: 8px 10px; gap: 10px; }
 
 .thinking { display: flex; gap: 5px; padding: 8px 0; align-items: center; }
 .thinking span { width: 6px; height: 6px; border-radius: 50%; background: var(--mc,var(--ac)); animation: think 1.3s ease-in-out infinite; }

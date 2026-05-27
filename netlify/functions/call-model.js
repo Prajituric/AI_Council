@@ -270,7 +270,11 @@ async function callAnthropic(key, model, history, currentAttachments, maxTokens,
     body: JSON.stringify(reqBody),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `Anthropic HTTP ${res.status}`);
+  if (!res.ok) {
+    const msg = data.error?.message || `Anthropic HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
+    throw new Error(msg);
+  }
   return {
     text: data.content.map(c => c.text || '').join(''),
     usage: { input_tokens: data.usage?.input_tokens || 0, output_tokens: data.usage?.output_tokens || 0 },
@@ -321,7 +325,11 @@ async function callOpenAI(key, baseUrl, model, history, currentAttachments, maxT
     body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+  if (!res.ok) {
+    const msg = data.error?.message || `HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
+    throw new Error(msg);
+  }
   return {
     text: data.choices[0].message.content,
     usage: { input_tokens: data.usage?.prompt_tokens || 0, output_tokens: data.usage?.completion_tokens || 0 },
@@ -368,7 +376,11 @@ async function callGemini(key, model, history, currentAttachments, maxTokens, sk
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gemReq) }
   );
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `Gemini HTTP ${res.status}`);
+  if (!res.ok) {
+    const msg = data.error?.message || `Gemini HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
+    throw new Error(msg);
+  }
   return {
     text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
     usage: {

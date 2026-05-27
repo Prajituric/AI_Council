@@ -370,7 +370,9 @@ async function streamAnthropic(key, model, history, currentAttachments, maxToken
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Anthropic HTTP ${res.status}`);
+    const msg = err.error?.message || `Anthropic HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
+    throw new Error(msg);
   }
 
   for await (const line of readLines(res.body)) {
@@ -431,7 +433,9 @@ async function streamOpenAI(key, base, model, history, currentAttachments, maxTo
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+    const msg = err.error?.message || `HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
+    throw new Error(msg);
   }
 
   for await (const line of readLines(res.body)) {
@@ -487,7 +491,9 @@ async function streamGemini(key, model, history, currentAttachments, maxTokens, 
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Gemini HTTP ${res.status}`);
+    const msg = err.error?.message || `Gemini HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
+    throw new Error(msg);
   }
 
   for await (const line of readLines(res.body)) {

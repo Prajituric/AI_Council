@@ -210,7 +210,9 @@ function exchangeHTML(msg) {
       const body = r.loading
         ? `<div class="thinking" style="--mc:${c}"><span></span><span></span><span></span></div>`
         : r.error
-          ? `<div class="mcard-err"><i class="ti ti-alert-circle"></i><span>${esc(r.error)}</span></div>`
+          ? (r.error.startsWith('ACCESS_DENIED:')
+            ? `<div class="mcard-err mcard-err-access"><i class="ti ti-lock" style="color:var(--yellow);flex-shrink:0;font-size:16px"></i><div><strong style="color:var(--tx);font-size:12px;display:block;margin-bottom:3px">Model access denied</strong><span style="font-size:11px;line-height:1.6;color:var(--tx2)">Your API key doesn't have permission for this model. Enable model access in your provider dashboard, or replace the <code style="font-size:10px;background:var(--bg4);padding:1px 4px;border-radius:3px">sk-proj-…</code> key with a standard API key.</span></div></div>`
+            : `<div class="mcard-err"><i class="ti ti-alert-circle"></i><span>${esc(r.error)}</span></div>`)
           : r.collapsed
             ? `<p class="mcard-text" style="font-size:11px;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0">${esc((r.text||'').slice(0,140))}</p>`
             : `<p class="mcard-text">${esc(r.text||'')}</p>`;
