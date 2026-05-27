@@ -1021,6 +1021,10 @@ async function initApp() {
         try {
           let sbUrl = (d.supabase.url || '').trim();
           if (sbUrl && !sbUrl.startsWith('http')) sbUrl = 'https://' + sbUrl;
+          // Auto-correct dashboard URL → project API URL
+          // e.g. https://supabase.com/dashboard/project/abc123 → https://abc123.supabase.co
+          const dashMatch = sbUrl.match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/i);
+          if (dashMatch) sbUrl = `https://${dashMatch[1]}.supabase.co`;
           const sbKey = (d.supabase.anonKey || '').trim();
           if (sbUrl && sbKey) S.sbClient = supabase.createClient(sbUrl, sbKey);
         } catch {}
@@ -1054,13 +1058,7 @@ async function initApp() {
   // Skills — Supabase-synced custom skills + built-in server skills
   await loadSkills();
 
-  // Notifications — unread role-reassignment alerts (#12)
-  await loadNotifications();
-
-  // Role overrides — auto-reassignments from check-model-performance (#57)
-  await loadRoleOverrides();
-
-  // Restore UI mode flags from localStorage
+  // Restore UI mode flags from localStorage (synchronous — always fast)
   S.cfg.forceAllModels  = LS.get('force_all_models', false);
   S.cfg.deepMode        = LS.get('deep_mode', false);
   S.cfg.enhancePrompts  = LS.get('enhance_prompts', true);       // default on
@@ -1070,9 +1068,14 @@ async function initApp() {
   S.cfg.desktopMode     = LS.get('desktop_mode', false);         // #65: desktop agent routing
   renderModeToggles();
 
-  // Subscribe to desktop agent status broadcasts (#65)
-  // Runs after Supabase is initialised so the channel exists.
-  initDesktopChannel();
+  // Non-blocking background tasks — don't delay login render
+  // Notifications, role overrides, and desktop channel all hit Supabase
+  // and can finish after the UI is already visible.
+  Promise.resolve().then(async () => {
+    await loadNotifications();    // unread role-reassignment alerts (#12)
+    await loadRoleOverrides();    // auto-reassignments from check-model-performance (#57)
+    initDesktopChannel();         // desktop agent WebSocket (#65)
+  }).catch(() => {});
 
   renderStrip();
   renderSidebar();
