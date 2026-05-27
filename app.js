@@ -1102,7 +1102,7 @@ async function loadRoleOverrides() {
       .select('value')
       .eq('user_id', 'default')
       .eq('key', 'role_overrides')
-      .single();
+      .maybeSingle();
     if (data?.value && typeof data.value === 'object') {
       S.roleOverrides = data.value;
       const count = Object.keys(S.roleOverrides).length;

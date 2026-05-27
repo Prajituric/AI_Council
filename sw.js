@@ -8,7 +8,7 @@
    - Offline fallback: serves a minimal offline page if everything fails.
    ================================================================ */
 
-const CACHE_NAME   = 'ai-council-v6';
+const CACHE_NAME   = 'ai-council-v7';
 const OFFLINE_URL  = '/offline.html';
 
 // Static assets to pre-cache on install
@@ -41,6 +41,10 @@ self.addEventListener('activate', event => {
 // ── Fetch ─────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   const { request } = event;
+
+  // Skip non-http(s) schemes (chrome-extension://, data:, etc.)
+  if (!request.url.startsWith('http')) return;
+
   const url = new URL(request.url);
 
   // Always bypass SW for API calls — fresh network data only
@@ -48,13 +52,21 @@ self.addEventListener('fetch', event => {
     return; // let the browser handle it normally
   }
 
+  // Bypass Supabase — never intercept or cache database/realtime calls
+  if (url.hostname.endsWith('.supabase.co') || url.hostname === 'supabase.com') {
+    return;
+  }
+
   // External CDN resources — network-first, fall back to cache
+  // Only cache cacheable (same-origin) responses, skip opaque cross-origin ones
   if (url.origin !== self.location.origin) {
     event.respondWith(
       fetch(request)
         .then(resp => {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put(request, clone));
+          if (resp && resp.ok && resp.type !== 'opaque') {
+            const clone = resp.clone();
+            caches.open(CACHE_NAME).then(c => c.put(request, clone));
+          }
           return resp;
         })
         .catch(() => caches.match(request))
