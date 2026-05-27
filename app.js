@@ -805,8 +805,45 @@ function suggest(i){
   ];
   const el=document.getElementById('prompt');el.value=S2[i];grow(el);el.focus();
 }
-function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');}
-function closeSidebar(){document.getElementById('sidebar').classList.remove('open');}
+function toggleSidebar() {
+  if (window.innerWidth <= 768) {
+    // Mobile: slide-in drawer
+    document.getElementById('sidebar').classList.toggle('open');
+  } else {
+    // Desktop: collapse sidebar width
+    document.getElementById('layout').classList.toggle('sidebar-closed');
+  }
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  // Also close account popup if open
+  const popup = document.getElementById('account-popup');
+  if (popup) popup.style.display = 'none';
+  const chevron = document.getElementById('account-chevron');
+  if (chevron) chevron.style.transform = '';
+}
+function toggleAccountMenu() {
+  const popup = document.getElementById('account-popup');
+  const chevron = document.getElementById('account-chevron');
+  if (!popup) return;
+  const isOpen = popup.style.display === 'block';
+  popup.style.display = isOpen ? 'none' : 'block';
+  if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+  if (!isOpen) {
+    // Close on outside click
+    setTimeout(() => {
+      const handler = (e) => {
+        const badge = document.getElementById('user-badge');
+        if (!popup.contains(e.target) && !badge?.contains(e.target)) {
+          popup.style.display = 'none';
+          if (chevron) chevron.style.transform = '';
+          document.removeEventListener('click', handler);
+        }
+      };
+      document.addEventListener('click', handler);
+    }, 0);
+  }
+}
 function setSendBusy(b){const btn=document.getElementById('btn-send');btn.disabled=b;btn.innerHTML=b?'<i class="ti ti-loader spin"></i>':'<i class="ti ti-arrow-up"></i>';}
 function search(q){document.querySelectorAll('.chat-item').forEach(el=>{const tx=el.querySelector('.chat-title')?.textContent?.toLowerCase()||'';el.style.display=tx.includes(q.toLowerCase())?'':'none';});}
 function scrollBottom(){setTimeout(()=>{const el=document.getElementById('messages');if(el)el.scrollTop=el.scrollHeight;},60);}
@@ -935,7 +972,7 @@ const App = {
   send:()=>send(), newChat, openChat, deleteChat, deleteActiveChat, exportChat,
   openModels, openSettings, openFiles, openUsage, closeModals, closeOverlay,
   exportModels, importModels, onImport, onFiles, removeFile,
-  suggest, toggleSidebar, grow, onKey, onPromptInput, search,
+  suggest, toggleSidebar, toggleAccountMenu, grow, onKey, onPromptInput, search,
   retry, showEdit, cancelEdit, submitEdit, prevVar, nextVar,
   dlPptx, dlXlsx, dlDocx, dlHtml, dlCsv, dlMd, dlPdf, copy, deleteStoredFile,
   requestEval,
@@ -944,6 +981,8 @@ const App = {
   // Skills
   activateSkillById, deactivateSkill, deleteCustomSkills, showSkillsHelp: showSkillsMenu,
   selectSlash,
+  // Mode toggles panel
+  toggleModesPanel,
   // Intelligence layer
   dismissNotifications, toggleDeepMode, toggleForceAll, toggleEnhancePrompts,
   toggleChainOfThought, toggleFactCheck, toggleWebSearch, toggleDesktopMode,
@@ -1122,80 +1161,92 @@ async function dismissNotifications() {
   }
 }
 
-// ── Mode toggles: Deep Mode + Force All Models (#8, #10) ──────
+// ── Mode toggles: collapsed into a single dropdown button ─────
 function renderModeToggles() {
   let container = document.getElementById('mode-toggles');
   if (!container) {
     container = document.createElement('div');
     container.id = 'mode-toggles';
-    container.style.cssText = 'display:flex;align-items:center;gap:6px;';
-    // Insert before the send button
+    container.style.cssText = 'position:relative;flex-shrink:0';
     const sendBtn = document.getElementById('btn-send');
     if (sendBtn?.parentElement) sendBtn.parentElement.insertBefore(container, sendBtn);
   }
 
-  const deepActive    = S.cfg.deepMode;
-  const forceActive   = S.cfg.forceAllModels;
-  const enhActive     = S.cfg.enhancePrompts;
-  const webActive     = S.cfg.webSearch;
-  const cotMode       = S.cfg.chainOfThought; // 'auto' | true | false
-  const cotLabel      = cotMode === true ? 'CoT ON' : cotMode === 'auto' ? 'CoT auto' : 'CoT';
-  const cotColor      = cotMode !== false ? '#f97316' : 'var(--tx3)';
-  const cotBd         = cotMode !== false ? '#f97316' : 'var(--bd)';
-  const cotBg         = cotMode === true ? 'rgba(249,115,22,.1)' : cotMode === 'auto' ? 'rgba(249,115,22,.06)' : 'none';
-  const factActive    = S.cfg.factCheck;
-  const deskActive    = S.cfg.desktopMode;
+  const w = S.cfg.webSearch, en = S.cfg.enhancePrompts, cot = S.cfg.chainOfThought;
+  const fc = S.cfg.factCheck, deep = S.cfg.deepMode, all = S.cfg.forceAllModels, desk = S.cfg.desktopMode;
+  const activeCount = [w, en, cot !== false, fc, deep, all, desk].filter(Boolean).length;
+  const cotLabel = cot === true ? 'CoT ON' : cot === 'auto' ? 'CoT auto' : 'CoT';
+
+  function pill(id, active, color, icon, label, handler) {
+    return `<button id="${id}" onclick="${handler}"
+      style="display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:7px;
+             border:1px solid ${active ? color : 'var(--bd)'};
+             background:${active ? color+'18' : 'none'};
+             color:${active ? color : 'var(--tx2)'};
+             font-size:12px;cursor:pointer;transition:all .15s;width:100%;text-align:left">
+      <i class="ti ${icon}"></i> ${label}${active ? ' ✓' : ''}
+    </button>`;
+  }
 
   container.innerHTML = `
-    <button id="toggle-web" onclick="App.toggleWebSearch()"
-      title="${webActive ? 'Web search ON — Tavily fetches live data when needed' : 'Web search OFF — pure model knowledge'}"
-      style="padding:4px 10px;border-radius:20px;border:1px solid ${webActive ? '#4285F4' : 'var(--bd)'};
-             background:${webActive ? 'rgba(66,133,244,.1)' : 'none'};
-             color:${webActive ? '#4285F4' : 'var(--tx3)'};font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap">
-      <i class="ti ti-world"></i> ${webActive ? 'Web ✓' : 'Web'}
+    <button id="modes-btn" onclick="App.toggleModesPanel()" title="Mode settings (${activeCount} active)"
+      style="width:32px;height:32px;border-radius:8px;
+             border:1px solid ${activeCount > 0 ? 'var(--ac-bd)' : 'var(--bd)'};
+             background:${activeCount > 0 ? 'var(--ac-bg)' : 'none'};
+             color:${activeCount > 0 ? 'var(--ac)' : 'var(--tx3)'};
+             display:flex;align-items:center;justify-content:center;
+             font-size:15px;cursor:pointer;transition:all .15s;position:relative">
+      <i class="ti ti-adjustments-horizontal"></i>
+      ${activeCount > 0 ? `<span style="position:absolute;top:-5px;right:-5px;width:15px;height:15px;
+        background:var(--ac);color:white;border-radius:50%;font-size:9px;font-weight:700;
+        display:flex;align-items:center;justify-content:center;
+        border:2px solid var(--bg3)">${activeCount}</span>` : ''}
     </button>
-    <button id="toggle-enhance" onclick="App.toggleEnhancePrompts()"
-      title="${enhActive ? 'Prompt enhancement ON — Groq rewrites vague prompts' : 'Prompt enhancement OFF'}"
-      style="padding:4px 10px;border-radius:20px;border:1px solid ${enhActive ? '#a78bfa' : 'var(--bd)'};
-             background:${enhActive ? 'rgba(167,139,250,.1)' : 'none'};
-             color:${enhActive ? '#a78bfa' : 'var(--tx3)'};font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap">
-      <i class="ti ti-sparkles"></i> ${enhActive ? 'Enhance ✓' : 'Enhance'}
-    </button>
-    <button id="toggle-cot" onclick="App.toggleChainOfThought()"
-      title="Chain-of-thought: ${cotMode === true ? 'always ON' : cotMode === 'auto' ? 'auto (math/analysis/code)' : 'OFF'} — click to cycle"
-      style="padding:4px 10px;border-radius:20px;border:1px solid ${cotBd};
-             background:${cotBg};
-             color:${cotColor};font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap">
-      <i class="ti ti-brain"></i> ${cotLabel}
-    </button>
-    <button id="toggle-fact" onclick="App.toggleFactCheck()"
-      title="${factActive ? 'Fact-check ON — Claude verifies synthesis' : 'Fact-check OFF'}"
-      style="padding:4px 10px;border-radius:20px;border:1px solid ${factActive ? '#facc15' : 'var(--bd)'};
-             background:${factActive ? 'rgba(250,204,21,.08)' : 'none'};
-             color:${factActive ? '#facc15' : 'var(--tx3)'};font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap">
-      <i class="ti ti-shield-check"></i> ${factActive ? 'Fact ✓' : 'Fact'}
-    </button>
-    <button id="toggle-deep" onclick="App.toggleDeepMode()"
-      title="${deepActive ? 'Deep Mode ON — two-round debate' : 'Deep Mode OFF — enable two-round debate'}"
-      style="padding:4px 10px;border-radius:20px;border:1px solid ${deepActive ? '#818cf8' : 'var(--bd)'};
-             background:${deepActive ? 'rgba(99,102,241,.12)' : 'none'};
-             color:${deepActive ? '#818cf8' : 'var(--tx3)'};font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap">
-      <i class="ti ti-arrows-exchange"></i> ${deepActive ? 'Deep ON' : 'Deep'}
-    </button>
-    <button id="toggle-force" onclick="App.toggleForceAll()"
-      title="${forceActive ? 'All models forced' : 'Smart routing active'}"
-      style="padding:4px 10px;border-radius:20px;border:1px solid ${forceActive ? '#10A37F' : 'var(--bd)'};
-             background:${forceActive ? 'rgba(16,163,127,.1)' : 'none'};
-             color:${forceActive ? '#10A37F' : 'var(--tx3)'};font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap">
-      <i class="ti ti-layout-grid"></i> ${forceActive ? 'All ✓' : 'All'}
-    </button>
-    <button id="toggle-desktop" onclick="App.toggleDesktopMode()"
-      title="${deskActive ? 'Desktop Mode ON — messages go to your local Python agent (@desktop prefix also works)' : 'Desktop Mode OFF — enable to route messages to your local agent'}"
-      style="padding:4px 10px;border-radius:20px;border:1px solid ${deskActive ? '#fb923c' : 'var(--bd)'};
-             background:${deskActive ? 'rgba(251,146,60,.12)' : 'none'};
-             color:${deskActive ? '#fb923c' : 'var(--tx3)'};font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap">
-      <i class="ti ti-device-desktop"></i> ${deskActive ? 'Agent ✓' : 'Agent'}
-    </button>`;
+    <div id="modes-panel" style="display:none;position:absolute;bottom:calc(100% + 10px);right:0;
+         background:var(--bg3);border:1px solid var(--bd2);border-radius:10px;
+         padding:10px;width:200px;
+         box-shadow:0 -6px 24px rgba(0,0,0,.5);z-index:60">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--tx3);
+                  font-weight:500;padding:0 2px 8px;border-bottom:1px solid var(--bd);margin-bottom:8px">
+        Mode Settings
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${pill('toggle-web',  w,    '#4285F4', 'ti-world',             'Web search',   'App.toggleWebSearch()')}
+        ${pill('toggle-enhance', en, '#a78bfa', 'ti-sparkles',         'Enhance prompt','App.toggleEnhancePrompts()')}
+        <button id="toggle-cot" onclick="App.toggleChainOfThought()"
+          style="display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:7px;
+                 border:1px solid ${cot !== false ? '#f97316' : 'var(--bd)'};
+                 background:${cot !== false ? 'rgba(249,115,22,.12)' : 'none'};
+                 color:${cot !== false ? '#f97316' : 'var(--tx2)'};
+                 font-size:12px;cursor:pointer;transition:all .15s;width:100%;text-align:left">
+          <i class="ti ti-brain"></i> ${cotLabel}
+        </button>
+        ${pill('toggle-fact', fc,   '#facc15',  'ti-shield-check',    'Fact-check',    'App.toggleFactCheck()')}
+        ${pill('toggle-deep', deep, '#818cf8',  'ti-arrows-exchange', 'Deep mode',     'App.toggleDeepMode()')}
+        ${pill('toggle-force',all,  '#10A37F',  'ti-layout-grid',     'All models',    'App.toggleForceAll()')}
+        ${pill('toggle-desktop',desk,'#fb923c', 'ti-device-desktop',  'Desktop agent', 'App.toggleDesktopMode()')}
+      </div>
+    </div>`;
+}
+
+// Open/close the modes panel
+function toggleModesPanel() {
+  const panel = document.getElementById('modes-panel');
+  if (!panel) return;
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  if (open) {
+    // Close on outside click
+    setTimeout(() => {
+      const handler = (e) => {
+        if (!document.getElementById('mode-toggles')?.contains(e.target)) {
+          panel.style.display = 'none';
+          document.removeEventListener('click', handler);
+        }
+      };
+      document.addEventListener('click', handler);
+    }, 0);
+  }
 }
 
 function toggleEnhancePrompts() {

@@ -65,7 +65,9 @@
       <div class="logo">
         <div class="logo-icon">
           <svg width="16" height="14" viewBox="0 0 16 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M8 1L14.5 12.5H1.5L8 1Z" stroke="#93c5fd" stroke-width="1.5" stroke-linejoin="round" fill="rgba(59,130,246,.15)"/>
+            <line x1="8" y1="1.5" x2="14.2" y2="12.5" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
+            <line x1="13.5" y1="12.5" x2="2.5" y2="12.5" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
+            <line x1="1.8" y1="12.5" x2="8" y2="1.5" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </div>
         <span class="logo-text">GenX</span>
@@ -81,37 +83,43 @@
     <div class="sidebar-chats" id="chat-list"></div>
 
     <div class="sidebar-bottom">
-      <!-- User badge -->
-      <div class="user-badge" id="user-badge">
-        <div class="user-avatar" id="user-avatar">?</div>
-        <span id="user-name-label">—</span>
-        <button class="btn-icon btn-xs" onclick="App.logout()" title="Logout" style="margin-left:auto">
-          <i class="ti ti-logout"></i>
+      <!-- Account popup (opens above the user badge) -->
+      <div class="account-popup" id="account-popup" style="display:none">
+        <button class="account-popup-item" onclick="App.openModels();App.toggleAccountMenu()">
+          <i class="ti ti-cpu"></i><span data-i18n="models">Models</span>
+          <span class="sidebar-badge" id="badge-models">0</span>
+        </button>
+        <button class="account-popup-item" onclick="App.showSkillsHelp();App.toggleAccountMenu()" id="skills-link" title="Slash commands — /marketing, /engineering, /learn ...">
+          <i class="ti ti-command"></i><span>Skills &amp; Commands</span>
+          <div class="skill-active-dot" id="skill-dot" style="display:none"></div>
+        </button>
+        <button class="account-popup-item" onclick="App.openFiles();App.toggleAccountMenu()">
+          <i class="ti ti-files"></i><span data-i18n="stored_files">Stored Files</span>
+          <span class="sidebar-badge" id="badge-files">0</span>
+        </button>
+        <button class="account-popup-item" onclick="App.openUsage();App.toggleAccountMenu()">
+          <i class="ti ti-chart-bar"></i><span>Usage &amp; Cost</span>
+        </button>
+        <button class="account-popup-item" onclick="App.openSettings();App.toggleAccountMenu()">
+          <i class="ti ti-settings"></i><span data-i18n="settings">Settings</span>
+        </button>
+        <div class="account-popup-divider"></div>
+        <button class="account-popup-item account-popup-danger" onclick="App.logout()">
+          <i class="ti ti-logout"></i><span data-i18n="logout">Logout</span>
         </button>
       </div>
 
-      <button class="sidebar-link" onclick="App.openModels()">
-        <i class="ti ti-cpu"></i><span data-i18n="models">Models</span>
-        <span class="sidebar-badge" id="badge-models">0</span>
-      </button>
-      <button class="skills-link" onclick="App.showSkillsHelp()" id="skills-link" title="Slash commands — /marketing, /engineering, /learn ...">
-        <i class="ti ti-command"></i><span>Skills & Commands</span>
-        <div class="skill-active-dot" id="skill-dot" style="display:none"></div>
-      </button>
-      <button class="sidebar-link" onclick="App.openFiles()">
-        <i class="ti ti-files"></i><span data-i18n="stored_files">Stored Files</span>
-        <span class="sidebar-badge" id="badge-files">0</span>
-      </button>
-      <button class="sidebar-link" onclick="App.openUsage()">
-        <i class="ti ti-chart-bar"></i><span>Usage &amp; Cost</span>
-      </button>
-      <button class="sidebar-link" onclick="App.openSettings()">
-        <i class="ti ti-settings"></i><span data-i18n="settings">Settings</span>
-      </button>
+      <!-- Clickable user badge -->
+      <div class="user-badge" id="user-badge" onclick="App.toggleAccountMenu()" style="cursor:pointer">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-name-label">—</span>
+        <i class="ti ti-chevron-up" id="account-chevron" style="margin-left:auto;font-size:12px;color:var(--tx3);transition:transform .2s"></i>
+      </div>
+
+      <!-- Status + language row -->
       <div class="sidebar-link status-row" id="status-row">
         <i class="ti ti-circle-filled" id="status-icon" style="font-size:8px;color:var(--tx3)"></i>
         <span id="status-text">...</span>
-        <!-- Language switcher (compact) -->
         <div class="lang-row" style="margin-left:auto;display:flex;gap:3px">
           <button onclick="App.setLang('en')" class="lang-mini" id="lm-en">EN</button>
           <button onclick="App.setLang('ro')" class="lang-mini" id="lm-ro">RO</button>
@@ -135,8 +143,9 @@
       <div class="welcome" id="welcome">
         <div class="welcome-logo">
           <svg width="32" height="28" viewBox="0 0 32 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M16 2L30 26H2L16 2Z" stroke="#5b9bd5" stroke-width="1.8" stroke-linejoin="round" fill="rgba(59,130,246,.12)"/>
-            <path d="M16 8L25 24H7L16 8Z" stroke="#3b82f6" stroke-width="1.2" stroke-linejoin="round" fill="rgba(59,130,246,.08)"/>
+            <line x1="16" y1="2" x2="29" y2="25" stroke="#5b9bd5" stroke-width="3" stroke-linecap="round"/>
+            <line x1="28" y1="26" x2="4" y2="26" stroke="#3b82f6" stroke-width="3" stroke-linecap="round"/>
+            <line x1="3" y1="25" x2="16" y2="2" stroke="#5b9bd5" stroke-width="3" stroke-linecap="round"/>
           </svg>
         </div>
         <h1 data-i18n="welcome_title">GenX</h1>

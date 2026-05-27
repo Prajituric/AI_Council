@@ -692,7 +692,7 @@ function buildXlsx(cfg){if(typeof XLSX==='undefined'){alert('SheetJS not loaded.
 function buildDocxFromText(cfg,rawText){if(typeof docx==='undefined'){dl(rawText,'document.md','text/markdown');return;}const{Document,Packer,Paragraph,TextRun,HeadingLevel}=docx;const children=[];(rawText||'').split('\n').forEach(line=>{if(line.startsWith('# '))children.push(new Paragraph({text:line.slice(2),heading:HeadingLevel.HEADING_1}));else if(line.startsWith('## '))children.push(new Paragraph({text:line.slice(3),heading:HeadingLevel.HEADING_2}));else if(line.startsWith('### '))children.push(new Paragraph({text:line.slice(4),heading:HeadingLevel.HEADING_3}));else if(line.startsWith('- '))children.push(new Paragraph({text:line.slice(2),bullet:{level:0}}));else if(line.trim())children.push(new Paragraph({children:[new TextRun(line)]}));else children.push(new Paragraph({}));});const doc2=new Document({sections:[{properties:{},children}]});Packer.toBlob(doc2).then(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`GenX_${Date.now()}.docx`;a.click();});}
 
 // ══════════════════════════════════════════════════════════════
-//  USAGE / COST DASHBOARD
+//  USAGE / COST DASHBOARD  (server-side query via /api/usage-stats)
 // ══════════════════════════════════════════════════════════════
 async function openUsage() {
   const body = document.getElementById('body-settings');
@@ -701,31 +701,32 @@ async function openUsage() {
   document.getElementById('modal-settings').querySelector('.modal-head h2').innerHTML =
     '<i class="ti ti-chart-bar"></i> Usage & Cost';
 
-  if (!S.sbClient) {
-    body.innerHTML = '<div class="note" style="text-align:center;padding:32px;color:var(--tx2)">Supabase not connected — connect it in Settings to enable usage tracking.</div>';
-    return;
-  }
-
   body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;padding:40px;gap:10px"><i class="ti ti-loader spin" style="font-size:20px"></i> Loading usage...</div>';
 
   try {
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-    const { data, error } = await S.sbClient.from('usage_log')
-      .select('provider, input_tokens, output_tokens, total_tokens')
-      .eq('user_id', AUTH.userId)
-      .gte('created_at', monthStart);
+    // Query via server-side function to avoid CORS / browser-Supabase network issues
+    const res  = await fetch('/api/usage-stats', { headers: AUTH.headers() });
+    const json = await res.json();
 
-    if (error) {
-      // Common cause: table doesn't exist (schema.sql not run yet)
-      const isTableMissing = error.message?.includes('usage_log') || error.code === '42P01';
-      throw new Error(
-        isTableMissing
-          ? 'Table "usage_log" not found. Run schema.sql in your Supabase SQL Editor first.'
-          : error.message
-      );
+    if (json.error === 'SUPABASE_NOT_CONFIGURED') {
+      body.innerHTML = `<div class="note" style="text-align:center;padding:32px;color:var(--tx2)">
+        Supabase not configured.<br>Add <code>SUPABASE_URL</code> + <code>SUPABASE_ANON_KEY</code>
+        in Netlify → Environment Variables and redeploy.
+      </div>`;
+      return;
     }
+    if (json.error === 'TABLE_NOT_FOUND') {
+      body.innerHTML = `<div class="note" style="padding:24px;color:var(--yellow)">
+        <strong>Table missing:</strong> <code>usage_log</code> doesn't exist yet.<br>
+        Run <code>schema.sql</code> in your Supabase Dashboard → SQL Editor.
+      </div>`;
+      return;
+    }
+    if (json.error) throw new Error(json.error);
 
-    if (!data?.length) {
+    const data = json.data || [];
+
+    if (!data.length) {
       body.innerHTML = '<div class="note" style="text-align:center;padding:40px;color:var(--tx2)">No usage recorded this month.</div>';
       return;
     }
@@ -822,16 +823,8 @@ async function openUsage() {
       }
     }
   } catch(e) {
-    const isNetwork = e instanceof TypeError && e.message.toLowerCase().includes('fetch');
-    body.innerHTML = `
-      <div class="note" style="color:var(--red);padding:20px">
-        <strong>Error loading usage:</strong> ${esc(e.message)}
-        ${isNetwork ? `<br><br><span style="color:var(--tx2);font-size:12px">
-          This is usually a network error reaching Supabase.<br>
-          Check: (1) your <code>SUPABASE_URL</code> env var starts with <code>https://</code>,
-          (2) <code>SUPABASE_ANON_KEY</code> is correct,
-          (3) you have run <code>schema.sql</code> in the Supabase SQL Editor.
-        </span>` : ''}
-      </div>`;
+    body.innerHTML = `<div class="note" style="color:var(--red);padding:20px">
+      <strong>Error loading usage:</strong> ${esc(e.message)}
+    </div>`;
   }
 }

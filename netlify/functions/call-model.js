@@ -39,7 +39,7 @@ exports.handler = async (event) => {
   } = body;
 
   const key = serverKey(provider);
-  if (!key) return respond({ error: `API key pentru ${provider} nu este configurat. Adaugă ${envName(provider)} în Netlify → Site Settings → Environment Variables și re-deploy.` });
+  if (!key) return respond({ error: `API key for ${provider} is not configured. Add ${envName(provider)} in Netlify → Site Settings → Environment Variables → Save → Redeploy.` });
 
   // Build skill system prefix if active
   const skillSystem = skillContext?.prompt

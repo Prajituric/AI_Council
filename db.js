@@ -44,8 +44,13 @@ const DB = {
   },
   async listFiles() {
     if (S.sbClient) {
-      const { data } = await S.sbClient.from('stored_files').select('*')
-        .eq('user_id', this.uid()).order('created_at', { ascending: false }).limit(500);
+      // Exclude extracted_text — can be many MB per file, not needed for the listing view
+      const { data } = await S.sbClient
+        .from('stored_files')
+        .select('id, user_id, r2_key, url, name, type, size, chat_id, job_id, created_at')
+        .eq('user_id', this.uid())
+        .order('created_at', { ascending: false })
+        .limit(200);
       if (data) return data;
     }
     return LS.get('stored_files', []);
