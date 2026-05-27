@@ -1097,14 +1097,15 @@ S.roleOverrides = {};  // { modelName: overrideRole }
 async function loadRoleOverrides() {
   if (!S.sbClient) return;
   try {
-    const { data } = await S.sbClient
+    const { data: rows } = await S.sbClient
       .from('preferences')
       .select('value')
       .eq('user_id', 'default')
       .eq('key', 'role_overrides')
-      .maybeSingle();
-    if (data?.value && typeof data.value === 'object') {
-      S.roleOverrides = data.value;
+      .limit(1);
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (row?.value && typeof row.value === 'object') {
+      S.roleOverrides = row.value;
       const count = Object.keys(S.roleOverrides).length;
       if (count) console.log(`[loadRoleOverrides] ${count} role override(s) loaded`);
     }

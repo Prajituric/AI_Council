@@ -38,7 +38,24 @@ const DB = {
   },
   async saveMsg(chatId, msg) {
     const r = { ...msg, chat_id: chatId, user_id: this.uid() };
-    if (S.sbClient) await S.sbClient.from('messages').upsert(r);
+    if (S.sbClient) {
+      // Only send columns that exist in the schema.
+      // Strip client-only fields (activeVariant camelCase, role, content, etc.)
+      // and remove raw base64 from attachment objects to avoid payload bloat.
+      const dbRow = {
+        id:             r.id,
+        chat_id:        r.chat_id,
+        user_id:        r.user_id,
+        seq:            r.seq ?? 0,
+        active_variant: r.activeVariant ?? r.active_variant ?? 0,
+        variants: (r.variants || []).map(v => ({
+          ...v,
+          attachments: (v.attachments || []).map(({ data, ...rest }) => rest),
+        })),
+        updated_at: new Date().toISOString(),
+      };
+      await S.sbClient.from('messages').upsert(dbRow).catch(() => {});
+    }
     const arr = LS.get('msgs_'+chatId, []); const i = arr.findIndex(m=>m.id===msg.id);
     if (i>=0) arr[i]=r; else arr.push(r); LS.set('msgs_'+chatId, arr);
   },
