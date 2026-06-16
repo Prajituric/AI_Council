@@ -3,6 +3,8 @@
    POST /api/learn-skill { topic, urls? }
    Crawls GitHub topics + README files, synthesizes a skill prompt
    ================================================================ */
+const { resolveModels } = require('./_resolve-models');
+const { callOpenRouter } = require('./_openrouter');
 const ORIGIN = process.env.URL || '*';
 const CORS = {
   'Content-Type': 'application/json',
@@ -28,8 +30,9 @@ exports.handler = async (event) => {
   const { topic, urls } = body;
   if (!topic) return respond({ error: 'Missing topic' });
 
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return respond({ error: 'ANTHROPIC_API_KEY required for skill synthesis' });
+  const key = process.env.OPENROUTER_API_KEY || '';
+  const models = await resolveModels();
+  if (!key) return respond({ error: 'OPENROUTER_API_KEY required for skill synthesis' });
 
   try {
     // 1. Gather knowledge from multiple sources
@@ -62,8 +65,8 @@ exports.handler = async (event) => {
       return respond({ error: `Could not find useful content for topic: ${topic}` });
     }
 
-    // 3. Use Claude to synthesize a skill system prompt from the gathered knowledge
-    const synthesizedPrompt = await synthesizeSkill(key, topic, combinedContent);
+    // 3. Use the resolved model to synthesize a skill system prompt from the gathered knowledge
+    const synthesizedPrompt = await synthesizeSkill(key, models.sonnet, topic, combinedContent);
 
     const skill = {
       id: slugify(topic),
@@ -144,17 +147,15 @@ async function fetchUrl(url) {
   } catch { return null; }
 }
 
-// ── Claude synthesizes the skill prompt ──────────────────────
-async function synthesizeSkill(key, topic, content) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1200,
-      messages: [{
-        role: 'user',
-        content: `Based on the following gathered information about "${topic}", create a comprehensive system prompt that will make an AI assistant an expert in this topic.
+// ── Model synthesizes the skill prompt (via OpenRouter) ───────
+async function synthesizeSkill(key, model, topic, content) {
+  const result = await callOpenRouter({
+    apiKey: key,
+    model,
+    maxTokens: 1200,
+    messages: [{
+      role: 'user',
+      content: `Based on the following gathered information about "${topic}", create a comprehensive system prompt that will make an AI assistant an expert in this topic.
 
 The system prompt should:
 1. Define the AI's expert persona for this topic
@@ -167,12 +168,9 @@ Gathered information:
 ${content}
 
 Return ONLY the system prompt text, no preamble or explanation.`,
-      }],
-    }),
+    }],
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Synthesis failed');
-  return data.content.map(c => c.text || '').join('');
+  return result.text;
 }
 
 // ── Utils ─────────────────────────────────────────────────────

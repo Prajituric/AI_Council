@@ -240,15 +240,19 @@ const AUTH = {
 // ══════════════════════════════════════════════════════════════
 //  CATALOG
 // ══════════════════════════════════════════════════════════════
+// NOTE: every model now routes through OpenRouter with ONE key, so modelName
+// must be an OpenRouter vendor-prefixed slug (not a native provider model id).
+// These are sane defaults; initApp() overwrites them with live-resolved
+// "best available" slugs from /api/config (see _resolve-models.js).
 const CATALOG = [
-  { id:'claude',     name:'Claude Sonnet 4',  provider:'anthropic', modelName:'claude-sonnet-4-20250514', accent:'#CF6A2F', role:'Analyst & Moderator',   hasVision:true  },
-  { id:'gpt4o',      name:'GPT-4o',           provider:'openai',    modelName:'gpt-4o',                   accent:'#10A37F', role:'Product Strategist',     hasVision:true  },
-  { id:'gpt4o-mini', name:'GPT-4o Mini',      provider:'openai',    modelName:'gpt-4o-mini',              accent:'#1abc9c', role:'Fast Assistant',         hasVision:true  },
-  { id:'gemini',     name:'Gemini 2.0 Flash', provider:'google',    modelName:'gemini-2.0-flash',         accent:'#4285F4', role:'Research Analyst',       hasVision:true  },
-  { id:'deepseek',   name:'DeepSeek V3',      provider:'deepseek',  modelName:'deepseek-chat',            accent:'#7C3AED', role:'Technical Architect',    hasVision:false },
-  { id:'grok',       name:'Grok 3 Fast',      provider:'xai',       modelName:'grok-3-fast',              accent:'#1C9BEF', role:'Contrarian & Critic',    hasVision:false },
-  { id:'groq-llama', name:'Llama 3.3 (Groq)', provider:'groq',      modelName:'llama-3.3-70b-versatile',  accent:'#f97316', role:'Fast Reasoning',         hasVision:false },
-  { id:'mistral',    name:'Mistral Large',    provider:'mistral',   modelName:'mistral-large-latest',     accent:'#ff7a59', role:'Generalist',             hasVision:false },
+  { id:'claude',     name:'Claude Sonnet',    provider:'anthropic', modelName:'anthropic/claude-3.7-sonnet',         accent:'#CF6A2F', role:'Analyst & Moderator',   hasVision:true  },
+  { id:'gpt4o',      name:'GPT-4o',           provider:'openai',    modelName:'openai/gpt-4o',                       accent:'#10A37F', role:'Product Strategist',     hasVision:true  },
+  { id:'gpt4o-mini', name:'GPT-4o Mini',      provider:'openai',    modelName:'openai/gpt-4o-mini',                  accent:'#1abc9c', role:'Fast Assistant',         hasVision:true  },
+  { id:'gemini',     name:'Gemini Flash',     provider:'google',    modelName:'google/gemini-2.0-flash-001',         accent:'#4285F4', role:'Research Analyst',       hasVision:true  },
+  { id:'deepseek',   name:'DeepSeek V3',      provider:'deepseek',  modelName:'deepseek/deepseek-chat',              accent:'#7C3AED', role:'Technical Architect',    hasVision:false },
+  { id:'grok',       name:'Grok',             provider:'xai',       modelName:'x-ai/grok-2-1212',                    accent:'#1C9BEF', role:'Contrarian & Critic',    hasVision:false },
+  { id:'groq-llama', name:'Llama 3.3 70B',    provider:'groq',      modelName:'meta-llama/llama-3.3-70b-instruct',   accent:'#f97316', role:'Fast Reasoning',         hasVision:false },
+  { id:'mistral',    name:'Mistral Large',    provider:'mistral',   modelName:'mistralai/mistral-large-2411',        accent:'#ff7a59', role:'Generalist',             hasVision:false },
 ];
 
 // ══════════════════════════════════════════════════════════════
@@ -272,9 +276,9 @@ const S = {
     enableEvaluation:false,
     forceAllModels: false,   // #8: bypass smart routing, use all active models
     deepMode: false,         // #10: two-round debate before synthesis
-    enhancePrompts: true,    // #3: rewrite vague prompts via Groq before council runs
+    enhancePrompts: true,    // #3: rewrite vague prompts via OpenRouter before council runs
     chainOfThought: 'auto',  // #3: 'auto'=math/analysis/code only, true=always, false=never
-    factCheck: false,        // #4: optional Claude fact-check pass after synthesis
+    factCheck: false,        // #4: optional fact-check pass after synthesis
     webSearch: true,         // #63: live web search via Tavily when question needs current data
     desktopMode: false,      // #65: route messages to desktop agent instead of model council
   },
@@ -859,7 +863,9 @@ function fmtTime(iso){try{return new Date(iso).toLocaleTimeString([],{hour:'2-di
 function fmtDate(iso){try{return new Date(iso).toLocaleDateString([],{day:'numeric',month:'short'});}catch{return '';}}
 function dl(content,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();}
 function b64toBlob(b64,type){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return new Blob([arr],{type});}
-function envKey(p){return{anthropic:'ANTHROPIC_API_KEY',openai:'OPENAI_API_KEY',google:'GEMINI_API_KEY',deepseek:'DEEPSEEK_API_KEY',xai:'XAI_API_KEY',groq:'GROQ_API_KEY',mistral:'MISTRAL_API_KEY',together:'TOGETHER_API_KEY',custom:'CUSTOM_API_KEY'}[p]||'API_KEY';}
+// Every model now authenticates through the single OpenRouter key — only
+// 'custom' models (user-supplied baseUrl) might use their own key/endpoint.
+function envKey(p){return p==='custom'?'CUSTOM_API_KEY':'OPENROUTER_API_KEY';}
 function fileIcon(type,name){const ext=(name||'').split('.').pop().toLowerCase();if(type?.startsWith('image/'))return'ti-photo';if(type==='application/pdf')return'ti-file-type-pdf';if(['js','ts','py','java','cpp','go','rs'].includes(ext))return'ti-file-code';if(['csv','xlsx','xls'].includes(ext))return'ti-table';if(['doc','docx'].includes(ext))return'ti-file-word';if(['json','xml','yaml','yml'].includes(ext))return'ti-file-code-2';if(['txt','md'].includes(ext))return'ti-file-text';return'ti-file';}
 
 // ══════════════════════════════════════════════════════════════
@@ -1016,6 +1022,40 @@ async function initApp() {
     if (r.ok) {
       const d = await r.json();
       S.cfg = { ...S.cfg, ...d };
+
+      // Apply dynamically resolved model versions (live OpenRouter catalog) to
+      // every CATALOG entry, not just Claude — keeps all 8 models pointed at
+      // the best available slug without needing a code change per release.
+      if (d.resolvedModels) {
+        const rm = d.resolvedModels;
+        const RESOLVE_MAP = {
+          claude: rm.sonnet, gpt4o: rm.gpt4o, 'gpt4o-mini': rm.gpt4oMini,
+          gemini: rm.gemini, deepseek: rm.deepseek, grok: rm.grok,
+          'groq-llama': rm.llama, mistral: rm.mistral,
+        };
+        CATALOG.forEach(c => {
+          const slug = RESOLVE_MAP[c.id];
+          if (slug) c.modelName = slug;
+        });
+        // Keep Claude's display name in sync with its resolved version (e.g. "Claude 3.7 Sonnet")
+        const catalogClaude = CATALOG.find(m => m.id === 'claude');
+        if (catalogClaude && rm.sonnet) {
+          catalogClaude.name = 'Claude ' + rm.sonnet.split('/').pop()
+            .replace('claude-', '').replace(/-\d{8}$/, '').replace(/-/g, ' ')
+            .replace(/\b\w/g, ch => ch.toUpperCase());
+        }
+        // Propagate resolved slug + display name to any already-loaded entries
+        S.models.forEach(m => {
+          const slug = RESOLVE_MAP[m.id];
+          if (slug) {
+            m.modelName = slug;
+            const catEntry = CATALOG.find(c => c.id === m.id);
+            if (catEntry) m.name = catEntry.name;
+          }
+        });
+        saveModels();
+      }
+
       // Auto-initialize Supabase from server-provided env vars (no manual setup required)
       if (d.supabase?.ok && !S.sbClient) {
         try {

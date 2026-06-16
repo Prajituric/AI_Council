@@ -4,7 +4,9 @@
    Runs after file is uploaded to R2
    ================================================================ */
 
-const { requireAuth } = require('./_auth-check');
+const { requireAuth }  = require('./_auth-check');
+const { resolveModels } = require('./_resolve-models');
+const { callOpenRouter, filePart } = require('./_openrouter');
 
 const ORIGIN = process.env.URL || '*';
 const CORS = {
@@ -44,8 +46,9 @@ exports.handler = async (event) => {
       text = text.slice(0, MAX_CONTEXT_CHARS);
 
     } else if (fileType === 'application/pdf') {
-      // Use Claude to extract text from PDF
-      const key = process.env.ANTHROPIC_API_KEY;
+      // Use a resolved model (via OpenRouter) to extract text from PDF
+      const key = process.env.OPENROUTER_API_KEY || '';
+      const models = await resolveModels();
       if (key) {
         let b64 = fileData;
         if (!b64 && fileUrl) {
@@ -54,7 +57,7 @@ exports.handler = async (event) => {
           b64 = Buffer.from(buf).toString('base64');
         }
         if (b64) {
-          text = await extractPdfWithClaude(key, b64);
+          text = await extractPdfViaOpenRouter(key, models.haiku, b64, fileName);
         }
       }
     } else if (fileType.startsWith('image/')) {
@@ -68,25 +71,21 @@ exports.handler = async (event) => {
   }
 };
 
-async function extractPdfWithClaude(key, b64) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
-          { type: 'text', text: 'Extrage TOT textul din acest document PDF. Păstrează structura, titlurile și paragrafele. Returnează DOAR textul extras, fără comentarii.' },
-        ],
-      }],
-    }),
+async function extractPdfViaOpenRouter(key, model, b64, fileName) {
+  const part = filePart({ data: b64 }, fileName || 'document.pdf');
+  const result = await callOpenRouter({
+    apiKey: key,
+    model,
+    maxTokens: 4000,
+    messages: [{
+      role: 'user',
+      content: [
+        part,
+        { type: 'text', text: 'Extrage TOT textul din acest document PDF. Păstrează structura, titlurile și paragrafele. Returnează DOAR textul extras, fără comentarii.' },
+      ],
+    }],
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'PDF extraction failed');
-  return data.content.map(c => c.text || '').join('');
+  return result.text;
 }
 
 function isTextType(type, name) {

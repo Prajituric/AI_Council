@@ -4,7 +4,9 @@
    Immediately returns jobId, then processes file.
    Frontend polls /api/job-status?jobId=xxx
    ================================================================ */
-const { requireAuth } = require('./_auth-check');
+const { requireAuth }  = require('./_auth-check');
+const { resolveModels } = require('./_resolve-models');
+const { callOpenRouter, filePart } = require('./_openrouter');
 
 const ORIGIN = process.env.URL || '*';
 const CORS = {
@@ -78,8 +80,9 @@ async function extractText(fileUrl, fileType, fileName, fileData) {
   }
 
   if (fileType === 'application/pdf') {
-    const key = process.env.ANTHROPIC_API_KEY;
-    if (!key) return '[PDF: ANTHROPIC_API_KEY not configured for extraction]';
+    const key = process.env.OPENROUTER_API_KEY || '';
+    const models = await resolveModels();
+    if (!key) return '[PDF: OPENROUTER_API_KEY not configured for extraction]';
     let b64 = fileData;
     if (!b64 && fileUrl) {
       const r = await fetch(fileUrl);
@@ -87,32 +90,28 @@ async function extractText(fileUrl, fileType, fileName, fileData) {
       b64 = Buffer.from(buf).toString('base64');
     }
     if (!b64) return '[PDF: could not read file]';
-    return await extractPdfClaude(key, b64);
+    return await extractPdfViaOpenRouter(key, models.haiku, b64, fileName);
   }
 
   if (fileType?.startsWith('image/')) return `[Image: ${fileName}]`;
   return `[Binary file: ${fileName}]`;
 }
 
-async function extractPdfClaude(key, b64) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
-          { type: 'text', text: 'Extract ALL text from this PDF. Keep structure. Return ONLY the extracted text, no commentary.' },
-        ],
-      }],
-    }),
+async function extractPdfViaOpenRouter(key, model, b64, fileName) {
+  const part = filePart({ data: b64 }, fileName || 'document.pdf');
+  const result = await callOpenRouter({
+    apiKey: key,
+    model,
+    maxTokens: 4000,
+    messages: [{
+      role: 'user',
+      content: [
+        part,
+        { type: 'text', text: 'Extract ALL text from this PDF. Keep structure. Return ONLY the extracted text, no commentary.' },
+      ],
+    }],
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'PDF extraction failed');
-  return data.content.map(c => c.text || '').join('').slice(0, MAX_CHARS);
+  return result.text.slice(0, MAX_CHARS);
 }
 
 function isTextFile(type, name) {

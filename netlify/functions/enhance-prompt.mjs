@@ -1,5 +1,5 @@
 /* ================================================================
-   enhance-prompt.mjs  —  Prompt enhancement via Groq (#3)
+   enhance-prompt.mjs  —  Prompt enhancement via OpenRouter (#3)
    Netlify Functions v2 (ESM + default export)
 
    POST /api/enhance-prompt
@@ -7,11 +7,16 @@
    Returns: { enhanced: string, changed: boolean }
 
    Rewrites vague/ambiguous prompts into clearer, more structured
-   versions before they reach the council. Uses Groq Llama 3.3 70B
-   for sub-200ms turnaround. Falls back to returning the original
-   prompt unchanged on any error (timeout, missing key, bad JSON).
+   versions before they reach the council. Uses a fast/cheap model
+   (via OpenRouter) for quick turnaround. Falls back to returning
+   the original prompt unchanged on any error (timeout, missing
+   key, bad JSON).
    ================================================================ */
 import crypto from 'crypto';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const { resolveModels } = _require('./_resolve-models.js');
+const { callOpenRouter } = _require('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
 const CORS_HEADERS = {
@@ -87,8 +92,9 @@ export default async (req) => {
     });
   }
 
-  const groqKey = process.env.GROQ_API_KEY;
-  if (!groqKey) {
+  const models = await resolveModels();
+  const key = process.env.OPENROUTER_API_KEY || '';
+  if (!key) {
     // No key → return original unchanged (non-fatal)
     return new Response(JSON.stringify({ enhanced: prompt, changed: false }), {
       status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -112,22 +118,16 @@ export default async (req) => {
 
     let enhanced = prompt;
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          max_tokens: 500,
-          temperature: 0.1,
-          messages: [
-            { role: 'system', content: REWRITER_SYSTEM },
-            { role: 'user', content: userMsg },
-          ],
-        }),
+      const result = await callOpenRouter({
+        apiKey: key,
+        model: models.fastUtil,
+        maxTokens: 500,
+        temperature: 0.1,
+        system: REWRITER_SYSTEM,
+        messages: [{ role: 'user', content: userMsg }],
         signal: ac.signal,
       });
-      const data = await res.json();
-      const text = data.choices?.[0]?.message?.content?.trim() || '';
+      const text = result.text?.trim() || '';
       if (text) enhanced = text;
     } finally {
       clearTimeout(timer);

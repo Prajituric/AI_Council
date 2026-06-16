@@ -1,7 +1,11 @@
 /* ================================================================
-   call-model.js  —  AI provider router
-   Supports: multiple attachments, R2 URLs, extracted text context
-   ALL keys from server env only — never from client
+   call-model.js  —  Council model caller (OpenRouter-only)
+
+   Every model call in the app now goes through ONE provider —
+   OpenRouter — authenticated with a single OPENROUTER_API_KEY.
+   The `provider` field sent by the client is kept only as a label
+   for usage logging / cache partitioning; `modelName` is expected
+   to be an OpenRouter slug (e.g. "anthropic/claude-sonnet-4.6").
    ================================================================ */
 const ORIGIN = process.env.URL || '*';
 const CORS = {
@@ -12,6 +16,7 @@ const CORS = {
 };
 
 const { requireAuth } = require('./_auth-check');
+const { callOpenRouter, imagePart, filePart } = require('./_openrouter');
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
@@ -28,9 +33,8 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body); } catch { return err(400, 'Invalid JSON'); }
 
   const {
-    provider,
+    provider = 'openrouter',
     modelName,
-    baseUrl   = '',
     history   = [],      // [{role, content, attachments?}]
     // Current message attachments (multiple)
     attachments = [],    // [{url, name, type, text, data}]
@@ -38,8 +42,8 @@ exports.handler = async (event) => {
     skillContext = null, // {name, prompt} — injected as system message
   } = body;
 
-  const key = serverKey(provider);
-  if (!key) return respond({ error: `API key for ${provider} is not configured. Add ${envName(provider)} in Netlify → Site Settings → Environment Variables → Save → Redeploy.` });
+  const key = process.env.OPENROUTER_API_KEY || '';
+  if (!key) return respond({ error: 'OPENROUTER_API_KEY lipsește pe server. Adaugă-l în Netlify → Site Settings → Environment Variables → Save → Redeploy.' });
 
   // Build skill system prefix if active
   const skillSystem = skillContext?.prompt
@@ -59,19 +63,8 @@ exports.handler = async (event) => {
       if (cached) return respond({ text: cached, cached: true });
     }
 
-    let result;
-    switch (provider) {
-      case 'anthropic': result = await callAnthropic(key, modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'openai':    result = await callOpenAI(key, 'https://api.openai.com', modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'google':    result = await callGemini(key, modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'deepseek':  result = await callOpenAI(key, 'https://api.deepseek.com', modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'xai':       result = await callOpenAI(key, 'https://api.x.ai', modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'groq':      result = await callOpenAI(key, 'https://api.groq.com/openai', modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'mistral':   result = await callOpenAI(key, 'https://api.mistral.ai', modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'together':  result = await callOpenAI(key, 'https://api.together.xyz', modelName, history, attachments, maxTokens, skillSystem); break;
-      case 'custom':    result = await callOpenAI(key, baseUrl, modelName, history, attachments, maxTokens, skillSystem); break;
-      default: return respond({ error: `Provider necunoscut: ${provider}` });
-    }
+    const result = await callModelViaOpenRouter(key, modelName, history, attachments, maxTokens, skillSystem);
+
     // Fire-and-forget: log usage + save to cache
     logUsage({ userId, provider, modelName, usage: result.usage }).catch(() => {});
     if (cacheKey) saveCachedResponse(cacheKey, { userId, provider, modelName, text: result.text }).catch(() => {});
@@ -82,26 +75,6 @@ exports.handler = async (event) => {
 };
 
 // ── Helpers ────────────────────────────────────────────────────
-function serverKey(p) {
-  return ({
-    anthropic: process.env.ANTHROPIC_API_KEY,
-    openai:    process.env.OPENAI_API_KEY,
-    google:    process.env.GEMINI_API_KEY,
-    deepseek:  process.env.DEEPSEEK_API_KEY,
-    xai:       process.env.XAI_API_KEY,
-    groq:      process.env.GROQ_API_KEY,
-    mistral:   process.env.MISTRAL_API_KEY,
-    together:  process.env.TOGETHER_API_KEY,
-    custom:    process.env.CUSTOM_API_KEY || 'placeholder',
-  })[p] || '';
-}
-
-function envName(p) {
-  return ({ anthropic:'ANTHROPIC_API_KEY', openai:'OPENAI_API_KEY', google:'GEMINI_API_KEY',
-    deepseek:'DEEPSEEK_API_KEY', xai:'XAI_API_KEY', groq:'GROQ_API_KEY',
-    mistral:'MISTRAL_API_KEY', together:'TOGETHER_API_KEY' })[p] || 'API_KEY';
-}
-
 function respond(b) { return { statusCode: 200, headers: CORS, body: JSON.stringify(b) }; }
 function err(c, m)  { return { statusCode: c, headers: CORS, body: JSON.stringify({ error: m }) }; }
 
@@ -227,67 +200,11 @@ function buildAttachmentContext(attachments) {
   return parts.join('');
 }
 
-// ── Anthropic ──────────────────────────────────────────────────
-async function callAnthropic(key, model, history, currentAttachments, maxTokens, skillSystem = '') {
+// ── OpenRouter (unified for every vendor) ───────────────────────
+async function callModelViaOpenRouter(key, model, history, currentAttachments, maxTokens, skillSystem = '') {
   const messages = [];
 
   // Build history with their attachments' extracted text
-  for (const msg of history) {
-    if (msg.role === 'user') {
-      let userContent = msg.content || '';
-      if (msg.attachments?.length) userContent += buildAttachmentContext(msg.attachments);
-      messages.push({ role: 'user', content: userContent });
-    } else {
-      messages.push({ role: 'assistant', content: msg.content });
-    }
-  }
-
-  const contentBlocks = [];
-  for (const att of (currentAttachments || [])) {
-    if (att.type === 'application/pdf') {
-      let b64 = att.data; if (!b64 && att.url) b64 = await fetchBase64(att.url);
-      if (b64) contentBlocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } });
-    } else if (att.type?.startsWith('image/')) {
-      let b64 = att.data; if (!b64 && att.url) b64 = await fetchBase64(att.url);
-      if (b64) contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: att.type, data: b64 } });
-    } else if (att.text) {
-      contentBlocks.push({ type: 'text', text: `--- ${att.name} ---\n${att.text}` });
-    }
-  }
-
-  const lastMsg = messages[messages.length - 1];
-  const promptText = (lastMsg?.role === 'user' ? lastMsg.content : '') || 'Analizează fișierele atașate.';
-  if (lastMsg?.role === 'user') messages.pop();
-  contentBlocks.push({ type: 'text', text: promptText });
-  messages.push({ role: 'user', content: contentBlocks });
-
-  const reqBody = { model, max_tokens: maxTokens, messages };
-  if (skillSystem) reqBody.system = skillSystem;
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify(reqBody),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const msg = data.error?.message || `Anthropic HTTP ${res.status}`;
-    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
-    throw new Error(msg);
-  }
-  return {
-    text: data.content.map(c => c.text || '').join(''),
-    usage: { input_tokens: data.usage?.input_tokens || 0, output_tokens: data.usage?.output_tokens || 0 },
-  };
-}
-
-// ── OpenAI-compatible ──────────────────────────────────────────
-async function callOpenAI(key, baseUrl, model, history, currentAttachments, maxTokens, skillSystem = '') {
-  const messages = [];
-
-  // Inject skill as system message
-  if (skillSystem) messages.push({ role: 'system', content: skillSystem });
-
   for (const msg of history) {
     if (msg.role === 'user') {
       let content = msg.content || '';
@@ -298,94 +215,34 @@ async function callOpenAI(key, baseUrl, model, history, currentAttachments, maxT
     }
   }
 
-  const hasImages = currentAttachments?.some(a => a.type?.startsWith('image/'));
-  const lastMsg   = messages[messages.length - 1];
-  const prompt    = (lastMsg?.role === 'user' ? lastMsg.content : '') || 'Analizează fișierele atașate.';
+  const lastMsg = messages[messages.length - 1];
+  const prompt  = (lastMsg?.role === 'user' ? lastMsg.content : '') || 'Analizează fișierele atașate.';
   if (lastMsg?.role === 'user') messages.pop();
 
+  // Text-extractable attachments (anything that isn't an image or a PDF) get inlined as text
+  const textAttachments = (currentAttachments || []).filter(a => !a.type?.startsWith('image/') && a.type !== 'application/pdf');
   let textContent = prompt;
-  if (currentAttachments?.length) textContent += buildAttachmentContext(currentAttachments.filter(a => !a.type?.startsWith('image/')));
+  if (textAttachments.length) textContent += buildAttachmentContext(textAttachments);
 
-  if (hasImages) {
-    const parts = [];
-    for (const att of currentAttachments || []) {
-      if (!att.type?.startsWith('image/')) continue;
-      if (att.url) parts.push({ type: 'image_url', image_url: { url: att.url } });
-      else if (att.data) parts.push({ type: 'image_url', image_url: { url: `data:${att.type};base64,${att.data}` } });
+  // Images and PDFs become native OpenAI-format content parts (vision / file-parser)
+  const mediaParts = [];
+  for (const att of (currentAttachments || [])) {
+    if (att.type?.startsWith('image/')) {
+      const part = imagePart(att);
+      if (part) mediaParts.push(part);
+    } else if (att.type === 'application/pdf') {
+      let data = att.data;
+      if (!data && att.url) data = await fetchBase64(att.url);
+      const part = filePart({ ...att, data }, att.name);
+      if (part) mediaParts.push(part);
     }
-    parts.push({ type: 'text', text: textContent });
-    messages.push({ role: 'user', content: parts });
+  }
+
+  if (mediaParts.length) {
+    messages.push({ role: 'user', content: [...mediaParts, { type: 'text', text: textContent }] });
   } else {
     messages.push({ role: 'user', content: textContent });
   }
 
-  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const msg = data.error?.message || `HTTP ${res.status}`;
-    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
-    throw new Error(msg);
-  }
-  return {
-    text: data.choices[0].message.content,
-    usage: { input_tokens: data.usage?.prompt_tokens || 0, output_tokens: data.usage?.completion_tokens || 0 },
-  };
-}
-
-// ── Google Gemini ──────────────────────────────────────────────
-async function callGemini(key, model, history, currentAttachments, maxTokens, skillSystem = '') {
-  const contents = [];
-
-  for (const msg of history) {
-    const role = msg.role === 'user' ? 'user' : 'model';
-    let text = msg.content || '';
-    if (msg.attachments?.length) text += buildAttachmentContext(msg.attachments);
-    contents.push({ role, parts: [{ text }] });
-  }
-
-  const lastMsg  = contents[contents.length - 1];
-  const prompt   = (lastMsg?.role === 'user' ? lastMsg.parts[0]?.text : '') || 'Analizează fișierele.';
-  if (lastMsg?.role === 'user') contents.pop();
-
-  const parts = [];
-  for (const att of (currentAttachments || [])) {
-    if (att.type?.startsWith('image/') || att.type === 'application/pdf') {
-      let b64 = att.data;
-      if (!b64 && att.url) b64 = await fetchBase64(att.url);
-      if (b64) parts.push({ inline_data: { mime_type: att.type, data: b64 } });
-    } else if (att.text) {
-      parts.push({ text: `--- ${att.name} ---\n${att.text}` });
-    }
-  }
-
-  let fullPrompt = prompt;
-  const nonVisualText = buildAttachmentContext((currentAttachments || []).filter(a => !a.type?.startsWith('image/') && a.type !== 'application/pdf'));
-  if (nonVisualText) fullPrompt += nonVisualText;
-  parts.push({ text: fullPrompt });
-  contents.push({ role: 'user', parts });
-
-  const gemReq = { contents, generationConfig: { maxOutputTokens: maxTokens } };
-  if (skillSystem) gemReq.systemInstruction = { parts: [{ text: skillSystem }] };
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gemReq) }
-  );
-  const data = await res.json();
-  if (!res.ok) {
-    const msg = data.error?.message || `Gemini HTTP ${res.status}`;
-    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
-    throw new Error(msg);
-  }
-  return {
-    text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
-    usage: {
-      input_tokens:  data.usageMetadata?.promptTokenCount     || 0,
-      output_tokens: data.usageMetadata?.candidatesTokenCount || 0,
-    },
-  };
+  return callOpenRouter({ apiKey: key, model, messages, system: skillSystem || undefined, maxTokens });
 }

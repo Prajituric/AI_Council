@@ -21,16 +21,12 @@ git push -u origin main
 ### 3. Netlify Environment Variables
 **Site Settings → Environment Variables → Add variable**
 
-#### AI Providers
+#### AI Provider
+Toate modelele (Claude, GPT-4o, Gemini, DeepSeek, Grok, Llama, Mistral) trec printr-un singur gateway — [OpenRouter](https://openrouter.ai/keys) — cu o singură cheie:
+
 | Variabilă | Provider |
 |-----------|----------|
-| `ANTHROPIC_API_KEY` | Claude (obligatoriu pentru sinteză) |
-| `OPENAI_API_KEY` | GPT-4o |
-| `GEMINI_API_KEY` | Gemini 2.0 Flash |
-| `DEEPSEEK_API_KEY` | DeepSeek V3 |
-| `XAI_API_KEY` | Grok 3 |
-| `GROQ_API_KEY` | Llama 3.3 (Groq) |
-| `MISTRAL_API_KEY` | Mistral Large |
+| `OPENROUTER_API_KEY` | Toate modelele (obligatoriu) — vezi [openrouter.ai/keys](https://openrouter.ai/keys) |
 
 #### Cloudflare R2 (fișiere mari, stocare permanentă)
 | Variabilă | Unde găsești |

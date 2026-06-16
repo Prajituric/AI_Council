@@ -2,6 +2,8 @@
    synthesize.js  —  Claude Sonnet 4 Premium Moderator
    Supports ALL document output types + visual generation
    ================================================================ */
+const { resolveModels } = require('./_resolve-models');
+const { callOpenRouter } = require('./_openrouter');
 const ORIGIN = process.env.URL || '*';
 const CORS = {
   'Access-Control-Allow-Origin': ORIGIN,
@@ -117,9 +119,10 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body); } catch { return { statusCode: 400, headers: CORS, body: '{}' }; }
 
   const { question, responses, attachmentsContext, skillContext } = body;
-  const key = process.env.ANTHROPIC_API_KEY || '';
+  const key = process.env.OPENROUTER_API_KEY || '';
+  const models = await resolveModels();
 
-  if (!key) return respond({ error: 'ANTHROPIC_API_KEY lipsește pe server. Sinteza necesită Claude.' });
+  if (!key) return respond({ error: 'OPENROUTER_API_KEY lipsește pe server. Sinteza necesită un model configurat prin OpenRouter.' });
   if (!responses?.length) return respond({ error: 'Niciun răspuns de sintetizat.' });
 
   // Inject active skill into system prompt
@@ -132,14 +135,14 @@ exports.handler = async (event) => {
   const userMsg      = `**Întrebarea/Sarcina:**\n"${question}"${attCtx}\n\n**Răspunsurile consiliului:**\n\n${councilText}`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: systemWithSkill, messages: [{ role: 'user', content: userMsg }] }),
+    const result = await callOpenRouter({
+      apiKey: key,
+      model: models.opus,
+      maxTokens: 4000,
+      system: systemWithSkill,
+      messages: [{ role: 'user', content: userMsg }],
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
-    return respond({ text: data.content.map(c => c.text || '').join('') });
+    return respond({ text: result.text });
   } catch (e) {
     return respond({ error: e.message });
   }

@@ -7,9 +7,9 @@
 
 // ── Context window summarization (#2) ────────────────────────
 // When a model's conversation history exceeds HISTORY_THRESHOLD
-// messages, we summarize the older turns via Groq and inject the
-// summary as a system note. This prevents silent truncation at
-// model token limits while keeping full conversational context.
+// messages, we summarize the older turns via a fast model (OpenRouter)
+// and inject the summary as a system note. This prevents silent
+// truncation at model token limits while keeping full conversational context.
 const HISTORY_THRESHOLD = 14;  // messages (7 user+assistant pairs) before summarizing
 const HISTORY_KEEP_LAST = 8;   // most recent messages always kept verbatim
 
@@ -117,7 +117,7 @@ async function streamSynthesis(question, responses, attachmentsContext, question
 }
 
 // ── Prompt enhancement (#3) ───────────────────────────────────
-// Calls /api/enhance-prompt (Groq-backed). Runs in parallel with
+// Calls /api/enhance-prompt (OpenRouter-backed). Runs in parallel with
 // routeQuestion() so it adds near-zero perceived latency.
 // Returns { enhanced, changed } — falls back to original on any error.
 async function enhancePrompt(prompt) {
@@ -164,7 +164,7 @@ function suggestSkillForType(questionType) {
 }
 
 // ── Web search (#63) ──────────────────────────────────────────
-// Calls /api/web-search (Groq classifier → Tavily).
+// Calls /api/web-search (OpenRouter classifier → Tavily).
 // Returns { needsSearch, query, results } or null on any failure.
 // Results are formatted into a webContext string that gets prepended
 // to every model's history so all models see the same live data.
@@ -223,7 +223,7 @@ async function runModels(msg, prompt, attachments, mkHistory) {
   const canRoute = !S.cfg.forceAllModels && visionPool.length > 2;
 
   // Run enhancement, routing, and web search all in parallel.
-  // Web search uses the original prompt for classification (fast Groq step).
+  // Web search uses the original prompt for classification (fast OpenRouter step).
   // All three are ~200-800ms; running concurrently adds zero perceived latency.
   const [enhResult, routingResult, searchResult] = await Promise.all([
     shouldEnhance    ? enhancePrompt(prompt)                            : Promise.resolve({ enhanced: prompt, changed: false }),

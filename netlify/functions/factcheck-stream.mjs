@@ -11,7 +11,10 @@
    incorrect. Streams results so the UI can render incrementally.
    ================================================================ */
 import crypto from 'crypto';
-import Anthropic from '@anthropic-ai/sdk';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const { resolveModels } = _require('./_resolve-models.js');
+const { streamOpenRouter } = _require('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
 const CORS_HEADERS = {
@@ -98,9 +101,10 @@ export default async (req) => {
     });
   }
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicKey) {
-    return new Response(JSON.stringify({ error: 'Anthropic API key not configured' }), {
+  const models = await resolveModels();
+  const key = process.env.OPENROUTER_API_KEY || '';
+  if (!key) {
+    return new Response(JSON.stringify({ error: 'OPENROUTER_API_KEY not configured' }), {
       status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     });
   }
@@ -112,23 +116,18 @@ export default async (req) => {
       };
 
       try {
-        const client = new Anthropic({ apiKey: anthropicKey });
         const userContent = question
           ? `Original question: ${question}\n\nSynthesis to fact-check:\n${synthesis}`
           : `Synthesis to fact-check:\n${synthesis}`;
 
-        const stream = await client.messages.stream({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 600,
+        await streamOpenRouter({
+          apiKey: key,
+          model: models.haiku,
+          maxTokens: 600,
           system: FACTCHECK_SYSTEM,
           messages: [{ role: 'user', content: userContent }],
+          onDelta: (delta) => send({ delta }),
         });
-
-        for await (const event of stream) {
-          if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-            send({ delta: event.delta.text });
-          }
-        }
 
         send({ done: true });
       } catch (err) {

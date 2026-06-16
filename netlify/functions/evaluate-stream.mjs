@@ -10,6 +10,10 @@
      data: {"error":"..."}             — error
    ================================================================ */
 import crypto from 'crypto';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const { resolveModels } = _require('./_resolve-models.js');
+const { streamOpenRouter } = _require('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
 const CORS_HEADERS = {
@@ -119,10 +123,11 @@ export default async (req) => {
   catch { return new Response(sseChunk({ error: 'Invalid JSON' }), { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' } }); }
 
   const { question, synthesis, responses, skillContext, questionType } = body;
-  const key = process.env.ANTHROPIC_API_KEY || '';
+  const key = process.env.OPENROUTER_API_KEY || '';
+  const models = await resolveModels();
 
   if (!key) {
-    return new Response(sseChunk({ error: 'ANTHROPIC_API_KEY not configured.' }), {
+    return new Response(sseChunk({ error: 'OPENROUTER_API_KEY not configured.' }), {
       status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' },
     });
   }
@@ -161,34 +166,14 @@ Evaluate and produce the optimized answer.`;
       const send = (obj) => controller.enqueue(enc.encode(sseChunk(obj)));
       let fullText = '';
       try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 3000,
-            stream: true,
-            system: EVALUATOR_SYSTEM,
-            messages: [{ role: 'user', content: userMsg }],
-          }),
+        fullText = await streamOpenRouter({
+          apiKey: key,
+          model: models.sonnet,
+          maxTokens: 3000,
+          system: EVALUATOR_SYSTEM,
+          messages: [{ role: 'user', content: userMsg }],
+          onDelta: (delta) => send({ delta }),
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error?.message || `Anthropic HTTP ${res.status}`);
-        }
-
-        for await (const line of readLines(res.body)) {
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6);
-          if (raw === '[DONE]') break;
-          try {
-            const evt = JSON.parse(raw);
-            if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-              fullText += evt.delta.text;
-              send({ delta: evt.delta.text });
-            }
-          } catch { /* skip malformed */ }
-        }
 
         // Extract score + strongest model from accumulated text
         const scoreMatch = fullText.match(/Overall Score:\s*([0-9.]+)\s*\/\s*10/i);
@@ -258,17 +243,3 @@ Evaluate and produce the optimized answer.`;
     },
   });
 };
-
-async function* readLines(body) {
-  const reader = body.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) { if (buf) yield buf; break; }
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const l of lines) yield l;
-  }
-}

@@ -9,10 +9,14 @@
    Called when a conversation exceeds the rolling history threshold.
    Condenses older turns into a compact summary that preserves all
    facts, decisions, and context a model needs to continue coherently.
-   Uses Groq Llama 3.3 70B (fast + cheap). Falls back to a simple
+   Uses a fast/cheap model (via OpenRouter). Falls back to a simple
    turn-count summary on any error so the pipeline never breaks.
    ================================================================ */
 import crypto from 'crypto';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const { resolveModels } = _require('./_resolve-models.js');
+const { callOpenRouter } = _require('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
 const CORS_HEADERS = {
@@ -78,9 +82,10 @@ export default async (req) => {
     });
   }
 
-  const groqKey = process.env.GROQ_API_KEY;
-  if (!groqKey) {
-    // Fallback: simple textual summary without Groq
+  const models = await resolveModels();
+  const key = process.env.OPENROUTER_API_KEY || '';
+  if (!key) {
+    // Fallback: simple textual summary without a model call
     const fallback = `[Earlier conversation: ${messages.length} messages covering the context of this session.]`;
     return new Response(JSON.stringify({ summary: fallback }), {
       status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -97,22 +102,16 @@ export default async (req) => {
     const timer = setTimeout(() => ac.abort(), 8000); // 8s — slightly longer since transcript can be large
     let summary = `[Earlier conversation: ${messages.length} messages]`;
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          max_tokens: 400,
-          temperature: 0.1,
-          messages: [
-            { role: 'system', content: SUMMARIZER_SYSTEM },
-            { role: 'user', content: `Summarize this conversation history:\n\n${transcript}` },
-          ],
-        }),
+      const result = await callOpenRouter({
+        apiKey: key,
+        model: models.fastUtil,
+        maxTokens: 400,
+        temperature: 0.1,
+        system: SUMMARIZER_SYSTEM,
+        messages: [{ role: 'user', content: `Summarize this conversation history:\n\n${transcript}` }],
         signal: ac.signal,
       });
-      const data = await res.json();
-      const text = data.choices?.[0]?.message?.content?.trim() || '';
+      const text = result.text?.trim() || '';
       if (text) summary = text;
     } finally {
       clearTimeout(timer);

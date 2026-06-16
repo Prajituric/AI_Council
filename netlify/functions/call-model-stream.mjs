@@ -1,21 +1,28 @@
 /* ================================================================
-   call-model-stream.mjs  —  Streaming AI responses via SSE
+   call-model-stream.mjs  —  Streaming AI responses via SSE (OpenRouter-only)
    Netlify Functions v2  (must be .mjs + default export)
-   Supports: anthropic, openai-compatible providers, Google Gemini
-   Handles attachments (text context + images/PDFs in content blocks)
+
+   Every council model now streams through ONE provider — OpenRouter —
+   authenticated with a single OPENROUTER_API_KEY. The `provider` field
+   sent by the client is kept only as a label; `modelName` is expected
+   to be an OpenRouter slug (e.g. "anthropic/claude-sonnet-4.6").
    Rate-limited: 100 req/hour per user via Supabase rate_limits table
    Injects role mandates + structured response format per model (#4 + #5)
    Supports two-round debate via round2Context field (#10)
 
    POST /api/call-model-stream
    Body: { provider, modelName, role, history, attachments, maxTokens,
-           skillContext, round2Context? }
+           skillContext, round2Context?, chainOfThought? }
    Response: text/event-stream
      data: {"delta":"..."}        — text chunk
      data: {"done":true}          — stream complete
      data: {"error":"..."}        — error
    ================================================================ */
 import crypto from 'crypto';
+import { createRequire } from 'module';
+
+const _req = createRequire(import.meta.url);
+const { streamOpenRouter, imagePart, filePart } = _req('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
 const CORS_HEADERS = {
@@ -162,32 +169,6 @@ function buildSystemPrompt(role, skillSystem, round2Context, chainOfThought) {
 const TIMEOUT_MS    = 30_000; // abort model call if no completion within 30s
 const RETRY_DELAY   =  2_000; // wait before the single automatic retry
 
-function serverKey(p) {
-  return ({
-    anthropic: process.env.ANTHROPIC_API_KEY,
-    openai:    process.env.OPENAI_API_KEY,
-    google:    process.env.GEMINI_API_KEY,
-    deepseek:  process.env.DEEPSEEK_API_KEY,
-    xai:       process.env.XAI_API_KEY,
-    groq:      process.env.GROQ_API_KEY,
-    mistral:   process.env.MISTRAL_API_KEY,
-    together:  process.env.TOGETHER_API_KEY,
-    custom:    process.env.CUSTOM_API_KEY || '',
-  })[p] || '';
-}
-
-function baseUrl(p, custom = '') {
-  return ({
-    openai:   'https://api.openai.com',
-    deepseek: 'https://api.deepseek.com',
-    xai:      'https://api.x.ai',
-    groq:     'https://api.groq.com/openai',
-    mistral:  'https://api.mistral.ai',
-    together: 'https://api.together.xyz',
-    custom:   custom,
-  })[p] || '';
-}
-
 // ── Attachment helpers ────────────────────────────────────────
 function buildAttachmentContext(attachments) {
   if (!attachments?.length) return '';
@@ -201,6 +182,50 @@ async function fetchBase64(url) {
   const res = await fetch(url);
   const buf = await res.arrayBuffer();
   return Buffer.from(buf).toString('base64');
+}
+
+// Build OpenAI-format messages (history + current attachments) for OpenRouter.
+async function buildMessages(history, currentAttachments) {
+  const messages = [];
+
+  for (const msg of history) {
+    if (msg.role === 'user') {
+      let content = msg.content || '';
+      if (msg.attachments?.length) content += buildAttachmentContext(msg.attachments);
+      messages.push({ role: 'user', content });
+    } else {
+      messages.push({ role: 'assistant', content: msg.content || '' });
+    }
+  }
+
+  const lastMsg = messages[messages.length - 1];
+  const prompt  = (lastMsg?.role === 'user' ? lastMsg.content : '') || 'Analyze the attached files.';
+  if (lastMsg?.role === 'user') messages.pop();
+
+  const textAttachments = (currentAttachments || []).filter(a => !a.type?.startsWith('image/') && a.type !== 'application/pdf');
+  let textContent = prompt;
+  if (textAttachments.length) textContent += buildAttachmentContext(textAttachments);
+
+  const mediaParts = [];
+  for (const att of (currentAttachments || [])) {
+    if (att.type?.startsWith('image/')) {
+      const part = imagePart(att);
+      if (part) mediaParts.push(part);
+    } else if (att.type === 'application/pdf') {
+      let data = att.data;
+      if (!data && att.url) data = await fetchBase64(att.url);
+      const part = filePart({ ...att, data }, att.name);
+      if (part) mediaParts.push(part);
+    }
+  }
+
+  if (mediaParts.length) {
+    messages.push({ role: 'user', content: [...mediaParts, { type: 'text', text: textContent }] });
+  } else {
+    messages.push({ role: 'user', content: textContent });
+  }
+
+  return messages;
 }
 
 // ── SSE helpers ───────────────────────────────────────────────
@@ -239,9 +264,7 @@ export default async (req) => {
   catch { return new Response(sseChunk({ error: 'Invalid JSON' }), { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' } }); }
 
   const {
-    provider,
     modelName,
-    baseUrl: customBase = '',
     role = '',                // council role → injected as system prompt
     history = [],
     attachments = [],
@@ -251,9 +274,9 @@ export default async (req) => {
     chainOfThought = false,   // prepend REASONING section to structured output (#3)
   } = body;
 
-  const key = serverKey(provider);
+  const key = process.env.OPENROUTER_API_KEY || '';
   if (!key) {
-    return new Response(sseChunk({ error: `API key for ${provider} not configured.` }), {
+    return new Response(sseChunk({ error: 'OPENROUTER_API_KEY not configured on the server.' }), {
       status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' },
     });
   }
@@ -277,13 +300,16 @@ export default async (req) => {
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(new Error(`Model timed out after ${TIMEOUT_MS / 1000}s`)), TIMEOUT_MS);
         try {
-          if (provider === 'anthropic') {
-            await streamAnthropic(key, modelName, history, attachments, maxTokens, systemPrompt, send, ac.signal);
-          } else if (provider === 'google') {
-            await streamGemini(key, modelName, history, attachments, maxTokens, systemPrompt, send, ac.signal);
-          } else {
-            await streamOpenAI(key, baseUrl(provider, customBase), modelName, history, attachments, maxTokens, systemPrompt, send, ac.signal);
-          }
+          const messages = await buildMessages(history, attachments);
+          await streamOpenRouter({
+            apiKey: key,
+            model: modelName,
+            messages,
+            system: systemPrompt || undefined,
+            maxTokens,
+            onDelta: (delta) => send({ delta }),
+            signal: ac.signal,
+          });
         } finally {
           clearTimeout(timer);
         }
@@ -325,198 +351,3 @@ export default async (req) => {
     },
   });
 };
-
-// ── Anthropic streaming (with attachment support) ─────────────
-async function streamAnthropic(key, model, history, currentAttachments, maxTokens, systemPrompt, send, signal) {
-  const messages = [];
-
-  for (const msg of history) {
-    if (msg.role === 'user') {
-      let content = msg.content || '';
-      if (msg.attachments?.length) content += buildAttachmentContext(msg.attachments);
-      messages.push({ role: 'user', content });
-    } else {
-      messages.push({ role: 'assistant', content: msg.content || '' });
-    }
-  }
-
-  const contentBlocks = [];
-  for (const att of (currentAttachments || [])) {
-    if (att.type === 'application/pdf') {
-      let b64 = att.data; if (!b64 && att.url) b64 = await fetchBase64(att.url);
-      if (b64) contentBlocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } });
-    } else if (att.type?.startsWith('image/')) {
-      let b64 = att.data; if (!b64 && att.url) b64 = await fetchBase64(att.url);
-      if (b64) contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: att.type, data: b64 } });
-    } else if (att.text) {
-      contentBlocks.push({ type: 'text', text: `--- ${att.name} ---\n${att.text}` });
-    }
-  }
-
-  const lastMsg = messages[messages.length - 1];
-  const promptText = (lastMsg?.role === 'user' ? lastMsg.content : '') || 'Analyze the attached files.';
-  if (lastMsg?.role === 'user') messages.pop();
-  contentBlocks.push({ type: 'text', text: promptText });
-  messages.push({ role: 'user', content: contentBlocks.length > 1 || contentBlocks[0]?.type !== 'text' ? contentBlocks : promptText });
-
-  const reqBody = { model, max_tokens: maxTokens, stream: true, messages };
-  if (systemPrompt) reqBody.system = systemPrompt;
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify(reqBody),
-    signal,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = err.error?.message || `Anthropic HTTP ${res.status}`;
-    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
-    throw new Error(msg);
-  }
-
-  for await (const line of readLines(res.body)) {
-    if (!line.startsWith('data: ')) continue;
-    const raw = line.slice(6);
-    if (raw === '[DONE]') break;
-    try {
-      const evt = JSON.parse(raw);
-      if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-        send({ delta: evt.delta.text });
-      }
-    } catch { /* skip malformed */ }
-  }
-}
-
-// ── OpenAI-compatible streaming (with attachment support) ─────
-async function streamOpenAI(key, base, model, history, currentAttachments, maxTokens, systemPrompt, send, signal) {
-  const messages = systemPrompt ? [{ role: 'system', content: systemPrompt }] : [];
-
-  for (const msg of history) {
-    if (msg.role === 'user') {
-      let content = msg.content || '';
-      if (msg.attachments?.length) content += buildAttachmentContext(msg.attachments);
-      messages.push({ role: 'user', content });
-    } else {
-      messages.push({ role: 'assistant', content: msg.content || '' });
-    }
-  }
-
-  const hasImages = currentAttachments?.some(a => a.type?.startsWith('image/'));
-  const lastMsg = messages[messages.length - 1];
-  const prompt = (lastMsg?.role === 'user' ? lastMsg.content : '') || 'Analyze the attached files.';
-  if (lastMsg?.role === 'user') messages.pop();
-
-  let textContent = prompt;
-  if (currentAttachments?.length) {
-    textContent += buildAttachmentContext(currentAttachments.filter(a => !a.type?.startsWith('image/')));
-  }
-
-  if (hasImages) {
-    const parts = [];
-    for (const att of currentAttachments || []) {
-      if (!att.type?.startsWith('image/')) continue;
-      if (att.url) parts.push({ type: 'image_url', image_url: { url: att.url } });
-      else if (att.data) parts.push({ type: 'image_url', image_url: { url: `data:${att.type};base64,${att.data}` } });
-    }
-    parts.push({ type: 'text', text: textContent });
-    messages.push({ role: 'user', content: parts });
-  } else {
-    messages.push({ role: 'user', content: textContent });
-  }
-
-  const res = await fetch(`${base}/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, messages }),
-    signal,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = err.error?.message || `HTTP ${res.status}`;
-    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
-    throw new Error(msg);
-  }
-
-  for await (const line of readLines(res.body)) {
-    if (!line.startsWith('data: ')) continue;
-    const raw = line.slice(6);
-    if (raw === '[DONE]') break;
-    try {
-      const evt = JSON.parse(raw);
-      const delta = evt.choices?.[0]?.delta?.content;
-      if (delta) send({ delta });
-    } catch { /* skip */ }
-  }
-}
-
-// ── Gemini streaming (with attachment support) ────────────────
-async function streamGemini(key, model, history, currentAttachments, maxTokens, systemPrompt, send, signal) {
-  const contents = [];
-
-  for (const msg of history) {
-    const role = msg.role === 'user' ? 'user' : 'model';
-    let text = msg.content || '';
-    if (msg.attachments?.length) text += buildAttachmentContext(msg.attachments);
-    contents.push({ role, parts: [{ text }] });
-  }
-
-  const lastMsg = contents[contents.length - 1];
-  const prompt = (lastMsg?.role === 'user' ? lastMsg.parts[0]?.text : '') || 'Analyze the attached files.';
-  if (lastMsg?.role === 'user') contents.pop();
-
-  const parts = [];
-  for (const att of (currentAttachments || [])) {
-    if (att.type?.startsWith('image/') || att.type === 'application/pdf') {
-      let b64 = att.data;
-      if (!b64 && att.url) b64 = await fetchBase64(att.url);
-      if (b64) parts.push({ inline_data: { mime_type: att.type, data: b64 } });
-    } else if (att.text) {
-      parts.push({ text: `--- ${att.name} ---\n${att.text}` });
-    }
-  }
-
-  let fullPrompt = prompt;
-  const nonVisualText = buildAttachmentContext((currentAttachments || []).filter(a => !a.type?.startsWith('image/') && a.type !== 'application/pdf'));
-  if (nonVisualText) fullPrompt += nonVisualText;
-  parts.push({ text: fullPrompt });
-  contents.push({ role: 'user', parts });
-
-  const gemReq = { contents, generationConfig: { maxOutputTokens: maxTokens } };
-  if (systemPrompt) gemReq.systemInstruction = { parts: [{ text: systemPrompt }] };
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${key}&alt=sse`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gemReq), signal }
-  );
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = err.error?.message || `Gemini HTTP ${res.status}`;
-    if (res.status === 401 || res.status === 403) throw new Error(`ACCESS_DENIED:${msg}`);
-    throw new Error(msg);
-  }
-
-  for await (const line of readLines(res.body)) {
-    if (!line.startsWith('data: ')) continue;
-    try {
-      const evt = JSON.parse(line.slice(6));
-      const text = evt.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) send({ delta: text });
-    } catch { /* skip */ }
-  }
-}
-
-// ── Async line reader ─────────────────────────────────────────
-async function* readLines(body) {
-  const reader = body.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) { if (buf) yield buf; break; }
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const l of lines) yield l;
-  }
-}

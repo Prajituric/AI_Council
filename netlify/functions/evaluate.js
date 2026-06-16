@@ -4,6 +4,8 @@
    Evaluates all council responses, picks best elements, produces
    an optimized final answer better than any single model.
    ================================================================ */
+const { resolveModels } = require('./_resolve-models');
+const { callOpenRouter } = require('./_openrouter');
 const ORIGIN = process.env.URL || '*';
 const CORS = {
   'Content-Type': 'application/json',
@@ -48,9 +50,10 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body); } catch { return { statusCode: 400, headers: CORS, body: '{}' }; }
 
   const { question, synthesis, responses, skillContext } = body;
-  const key = process.env.ANTHROPIC_API_KEY || '';
+  const key = process.env.OPENROUTER_API_KEY || '';
+  const models = await resolveModels();
 
-  if (!key)               return respond({ error: 'ANTHROPIC_API_KEY required for evaluation' });
+  if (!key)               return respond({ error: 'OPENROUTER_API_KEY required for evaluation' });
   if (!synthesis)         return respond({ error: 'Missing synthesis' });
   if (!responses?.length) return respond({ error: 'Missing model responses' });
 
@@ -73,19 +76,14 @@ ${synthesis}
 Evaluate and produce the optimized answer.`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 3000,
-        system: EVALUATOR_SYSTEM,
-        messages: [{ role: 'user', content: userMsg }],
-      }),
+    const result = await callOpenRouter({
+      apiKey: key,
+      model: models.sonnet,
+      maxTokens: 3000,
+      system: EVALUATOR_SYSTEM,
+      messages: [{ role: 'user', content: userMsg }],
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
-    const text = data.content.map(c => c.text || '').join('');
+    const text = result.text;
     const scoreMatch = text.match(/Overall Score:\s*([0-9.]+)\s*\/\s*10/i);
     return respond({ evaluation: text, score: scoreMatch ? parseFloat(scoreMatch[1]) : null });
   } catch (e) {

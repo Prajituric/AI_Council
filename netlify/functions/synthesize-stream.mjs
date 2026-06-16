@@ -21,6 +21,10 @@
      returns {"type":"clarification",...} instead of a synthesis.
    ================================================================ */
 import crypto from 'crypto';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const { resolveModels } = _require('./_resolve-models.js');
+const { streamOpenRouter, callOpenRouter } = _require('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
 const CORS_HEADERS = {
@@ -74,12 +78,11 @@ async function checkRateLimit(userId) {
   } catch { return false; }
 }
 
-// ── Quality filter: Groq pre-scores each response 1–10 ───────
-// Fast (Llama 3.3), cheap, adds ~200ms. Returns { ModelName: score }
-// or null if Groq not configured or call fails.
-async function scoreResponsesWithGroq(question, responses) {
-  const groqKey = process.env.GROQ_API_KEY;
-  if (!groqKey || !responses.length) return null;
+// ── Quality filter: a fast model pre-scores each response 1–10 ───
+// Cheap, fast (resolved fastUtil tier via OpenRouter), adds ~200ms.
+// Returns { ModelName: score } or null if not configured / call fails.
+async function scoreResponsesWithFastModel(question, responses, apiKey, fastModel) {
+  if (!apiKey || !responses.length) return null;
 
   const preview = responses.map(r =>
     `### ${r.name}\n${(r.text || '').slice(0, 600)}`
@@ -92,29 +95,23 @@ async function scoreResponsesWithGroq(question, responses) {
     `Respond with ONLY valid JSON: {"scores": {"ModelName": score_integer, ...}}`;
 
   try {
-    // Abort after 5s — Groq is a fast pre-filter; if it's slow/down, skip it gracefully
+    // Abort after 5s — this is a fast pre-filter; if it's slow/down, skip it gracefully
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 5000);
-    let data;
+    let result;
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          max_tokens: 150,
-          temperature: 0,
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-        }),
+      result = await callOpenRouter({
+        apiKey,
+        model: fastModel,
+        maxTokens: 150,
+        temperature: 0,
+        messages: [{ role: 'user', content: prompt }],
         signal: ac.signal,
       });
-      data = await res.json();
     } finally {
       clearTimeout(timer);
     }
-    const text = data?.choices?.[0]?.message?.content || '{}';
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(result.text || '{}');
     return parsed.scores || null;
   } catch { return null; } // Any error (timeout, network, parse) → neutral scores, synthesis continues
 }
@@ -122,7 +119,7 @@ async function scoreResponsesWithGroq(question, responses) {
 function sseChunk(obj) { return `data: ${JSON.stringify(obj)}\n\n`; }
 
 // ── Synthesizer system prompt (structured-aggregation aware) ─
-const SYSTEM = `You are the Moderator of an AI Council — powered by Claude Opus 4.6, the most capable synthesis model available. Your role is to read structured responses from multiple AI models and produce a single, definitive, high-quality synthesis.
+const SYSTEM = `You are the Moderator of an AI Council — powered by the most capable Claude model available, running the latest Opus release. Your role is to read structured responses from multiple AI models and produce a single, definitive, high-quality synthesis.
 
 Each model responded using this structure:
 - DIRECT ANSWER: the model's core answer
@@ -259,10 +256,12 @@ export default async (req) => {
   catch { return new Response(sseChunk({ error: 'Invalid JSON' }), { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' } }); }
 
   const { question, responses, attachmentsContext, skillContext, questionType, webContext } = body;
-  const key = process.env.ANTHROPIC_API_KEY || '';
+  const key = process.env.OPENROUTER_API_KEY || '';
+  // Resolve best available model versions (cached 6h, falls back to safe defaults)
+  const models = await resolveModels();
 
   if (!key) {
-    return new Response(sseChunk({ error: 'ANTHROPIC_API_KEY not configured.' }), {
+    return new Response(sseChunk({ error: 'OPENROUTER_API_KEY not configured.' }), {
       status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream' },
     });
   }
@@ -274,7 +273,7 @@ export default async (req) => {
 
   // ── Quality filter: score responses before synthesis ──────
   // Runs in parallel while we build the user message
-  const qualityScores = await scoreResponsesWithGroq(question, responses);
+  const qualityScores = await scoreResponsesWithFastModel(question, responses, key, models.fastUtil);
 
   const systemWithSkill = skillContext?.prompt
     ? `${SYSTEM}\n\n---\n## ACTIVE SKILL: ${skillContext.name}\n${skillContext.prompt}`
@@ -292,12 +291,12 @@ export default async (req) => {
     return `### ${r.name} — ${r.role}${scoreNote}\n${r.text}`;
   }).join('\n\n---\n\n');
 
-  const attCtx  = attachmentsContext ? `\n\n**Context fișiere atașate:**\n${attachmentsContext}` : '';
+  const attCtx  = attachmentsContext ? `\n\n**Attached file context:**\n${attachmentsContext}` : '';
   const qtNote  = questionType ? `\n**Question type:** ${questionType}` : '';
   const webNote = webContext
-    ? `\n\n**[LIVE WEB CONTEXT — retrieved just now]**\n${webContext}\nCitează sursele relevante în sinteză.`
+    ? `\n\n**[LIVE WEB CONTEXT — retrieved just now]**\n${webContext}\nCite relevant sources in the synthesis.`
     : '';
-  const userMsg = `**Întrebarea/Sarcina:**\n"${question}"${webNote}${attCtx}${qtNote}\n\n**Răspunsurile structurate ale consiliului:**\n\n${councilText}`;
+  const userMsg = `**Question/Task:**\n"${question}"${webNote}${attCtx}${qtNote}\n\n**Structured council responses:**\n\n${councilText}`;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -305,34 +304,14 @@ export default async (req) => {
       const send = (obj) => controller.enqueue(enc.encode(sseChunk(obj)));
       let fullText = '';
       try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({
-            model: 'claude-opus-4-6',
-            max_tokens: 4000,
-            stream: true,
-            system: systemWithSkill,
-            messages: [{ role: 'user', content: userMsg }],
-          }),
+        fullText = await streamOpenRouter({
+          apiKey: key,
+          model: models.opus,
+          maxTokens: 4000,
+          system: systemWithSkill,
+          messages: [{ role: 'user', content: userMsg }],
+          onDelta: (delta) => send({ delta }),
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error?.message || `Anthropic HTTP ${res.status}`);
-        }
-
-        for await (const line of readLines(res.body)) {
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6);
-          if (raw === '[DONE]') break;
-          try {
-            const evt = JSON.parse(raw);
-            if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-              fullText += evt.delta.text;
-              send({ delta: evt.delta.text });
-            }
-          } catch { /* skip malformed */ }
-        }
 
         // Check for clarification mode (synthesizer returned JSON)
         const trimmed = fullText.trim();
@@ -365,17 +344,3 @@ export default async (req) => {
     },
   });
 };
-
-async function* readLines(body) {
-  const reader = body.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) { if (buf) yield buf; break; }
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const l of lines) yield l;
-  }
-}

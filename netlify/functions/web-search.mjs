@@ -7,7 +7,8 @@
    Returns: { needsSearch, query, results: [{title, url, content}] }
 
    Pipeline:
-   1. Groq Llama-3.3-70B classifies whether live web data is needed.
+   1. A fast/cheap model (via OpenRouter) classifies whether live web
+      data is needed.
    2. If yes, Tavily fires a clean search (purpose-built for LLM agents).
    3. Returns structured results for injection into every model's context.
 
@@ -17,6 +18,10 @@
                          general stable knowledge, analysis of attached files.
    ================================================================ */
 import crypto from 'crypto';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const { resolveModels } = _require('./_resolve-models.js');
+const { callOpenRouter } = _require('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
 const CORS_HEADERS = {
@@ -67,27 +72,21 @@ needsSearch = false for:
 When needsSearch = true, produce a concise, search-engine-optimized query.
 Strip filler words. Focus on the key entities and intent.`;
 
-async function classifyWithGroq(prompt, groqKey) {
+async function classifyQuestion(prompt, apiKey, model) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 4000);
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 80,
-        temperature: 0.1,
-        messages: [
-          { role: 'system', content: CLASSIFIER_SYSTEM },
-          { role: 'user', content: `Classify this question: "${prompt.slice(0, 400)}"` },
-        ],
-      }),
+    const result = await callOpenRouter({
+      apiKey,
+      model,
+      maxTokens: 80,
+      temperature: 0.1,
+      system: CLASSIFIER_SYSTEM,
+      messages: [{ role: 'user', content: `Classify this question: "${prompt.slice(0, 400)}"` }],
       signal: ac.signal,
     });
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content?.trim() || '';
-    // Strip markdown code fences if Groq wraps the JSON
+    const text = result.text?.trim() || '';
+    // Strip markdown code fences if the model wraps the JSON
     const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     return JSON.parse(clean);
   } finally {
@@ -150,11 +149,12 @@ export default async (req) => {
   }
 
   const { prompt = '' } = body;
-  const groqKey   = process.env.GROQ_API_KEY;
+  const models    = await resolveModels();
+  const key       = process.env.OPENROUTER_API_KEY || '';
   const tavilyKey = process.env.TAVILY_API_KEY;
 
   // No keys — return needsSearch: false gracefully
-  if (!groqKey || !tavilyKey) {
+  if (!key || !tavilyKey) {
     return new Response(JSON.stringify({ needsSearch: false, query: '', results: [] }), {
       status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     });
@@ -164,7 +164,7 @@ export default async (req) => {
     // Step 1: classify
     let classification;
     try {
-      classification = await classifyWithGroq(prompt, groqKey);
+      classification = await classifyQuestion(prompt, key, models.fastUtil);
     } catch {
       return new Response(JSON.stringify({ needsSearch: false, query: '', results: [] }), {
         status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
