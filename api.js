@@ -190,12 +190,29 @@ function buildWebContextString(results) {
 }
 
 // ── Smart routing (#8) ─────────────────────────────────────────
-async function routeQuestion(question, availableModelIds) {
-  if (S.cfg.forceAllModels || !availableModelIds.length) return null;
+async function routeQuestion(question, availableModels) {
+  if (S.cfg.forceAllModels || !availableModels.length) return null;
+
+  // Build model descriptions from model metadata
+  const modelDescriptions = {};
+  const modelIds = [];
+  for (const m of availableModels) {
+    modelIds.push(m.id);
+    // Use role if available, otherwise generic description
+    modelDescriptions[m.id] = m.role
+      ? `${m.name} — ${m.role}`
+      : `${m.name} — general-purpose AI model`;
+  }
+
   try {
     const res = await fetch('/api/route-question', {
       method: 'POST', headers: AUTH.headers(),
-      body: JSON.stringify({ question, availableModelIds }),
+      body: JSON.stringify({
+        question,
+        availableModelIds: modelIds,
+        modelDescriptions,
+        maxModels: S.cfg.maxModels || 4
+      }),
     });
     if (!res.ok) return null;
     return await res.json();
@@ -227,7 +244,7 @@ async function runModels(msg, prompt, attachments, mkHistory) {
   // All three are ~200-800ms; running concurrently adds zero perceived latency.
   const [enhResult, routingResult, searchResult] = await Promise.all([
     shouldEnhance    ? enhancePrompt(prompt)                            : Promise.resolve({ enhanced: prompt, changed: false }),
-    canRoute         ? routeQuestion(prompt, visionPool.map(m => m.id)) : Promise.resolve(null),
+    canRoute         ? routeQuestion(prompt, visionPool)               : Promise.resolve(null),
     S.cfg.webSearch  ? searchWeb(prompt)                                : Promise.resolve(null),
   ]);
 

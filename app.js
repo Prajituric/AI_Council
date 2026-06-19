@@ -275,6 +275,7 @@ const S = {
     providers:{}, r2:{ok:false}, supabase:{ok:false}, maxFileSizeMB:4,
     enableEvaluation:false,
     forceAllModels: false,   // #8: bypass smart routing, use all active models
+    maxModels: 4,            // #8: max models to select in smart routing (can be raised for larger councils)
     deepMode: false,         // #10: two-round debate before synthesis
     enhancePrompts: true,    // #3: rewrite vague prompts via OpenRouter before council runs
     chainOfThought: 'auto',  // #3: 'auto'=math/analysis/code only, true=always, false=never

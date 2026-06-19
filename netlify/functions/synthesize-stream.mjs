@@ -23,7 +23,7 @@
 import crypto from 'crypto';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
-const { resolveModels } = _require('./_resolve-models.js');
+const { resolveModels, bestSynthesizer } = _require('./_resolve-models.js');
 const { streamOpenRouter, callOpenRouter } = _require('./_openrouter.js');
 
 const ORIGIN = process.env.URL || '*';
@@ -257,6 +257,8 @@ export default async (req) => {
 
   const { question, responses, attachmentsContext, skillContext, questionType, webContext } = body;
   const key = process.env.OPENROUTER_API_KEY || '';
+  const sbUrl = process.env.SUPABASE_URL;
+  const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
   // Resolve best available model versions (cached 6h, falls back to safe defaults)
   const models = await resolveModels();
 
@@ -271,9 +273,19 @@ export default async (req) => {
     });
   }
 
-  // ── Quality filter: score responses before synthesis ──────
-  // Runs in parallel while we build the user message
-  const qualityScores = await scoreResponsesWithFastModel(question, responses, key, models.fastUtil);
+  // ── Dynamic synthesizer selection ─────────────────────────────────
+  // Query model_performance for the best overall synthesizer.
+  // Falls back to models.opus if no data.
+  const [qualityScores, synthInfo] = await Promise.all([
+    scoreResponsesWithFastModel(question, responses, key, models.fastUtil),
+    bestSynthesizer(sbUrl, sbKey),
+  ]);
+
+  // Use dynamically selected synthesizer, or fall back to opus
+  const synthesizerSlug = synthInfo.slug || models.opus;
+  const synthesizerNote = synthInfo.avgScore > 0
+    ? ` (dynamic: ${synthInfo.modelName}, avg score ${synthInfo.avgScore})`
+    : ' (fallback: opus)';
 
   const systemWithSkill = skillContext?.prompt
     ? `${SYSTEM}\n\n---\n## ACTIVE SKILL: ${skillContext.name}\n${skillContext.prompt}`
@@ -306,7 +318,7 @@ export default async (req) => {
       try {
         fullText = await streamOpenRouter({
           apiKey: key,
-          model: models.opus,
+          model: synthesizerSlug,
           maxTokens: 4000,
           system: systemWithSkill,
           messages: [{ role: 'user', content: userMsg }],
@@ -325,7 +337,7 @@ export default async (req) => {
           } catch { /* not valid JSON, treat as normal text */ }
         }
 
-        send({ done: true, qualityScores: qualityScores || undefined });
+        send({ done: true, qualityScores: qualityScores || undefined, synthesizer: { slug: synthesizerSlug, modelName: synthInfo.modelName, avgScore: synthInfo.avgScore } });
       } catch (e) {
         send({ error: e.message });
       } finally {

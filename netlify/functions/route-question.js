@@ -4,14 +4,17 @@
    queries model_performance to select top models for that type.
 
    POST /api/route-question
-   Body: { question, availableModelIds }
+   Body: { question, availableModelIds, modelDescriptions?, maxModels? }
    Returns: {
      questionType,        // 'code'|'research'|'creative'|'analysis'|'math'|'other'
-     selectedModelIds,    // top 2-3 model IDs to use (or all if no data)
+     selectedModelIds,    // best model IDs for this task (configurable count)
      confidence,          // 0-100 routing confidence
      reason,              // human-readable explanation
      allScores,           // { modelId: avgScore } for available models
    }
+
+   modelDescriptions: optional { modelId: "description" } for custom/user-added models
+   maxModels: optional max number to select (default: uses LLM judgment, min 2)
    ================================================================ */
 const { requireAuth }  = require('./_auth-check');
 const { resolveModels } = require('./_resolve-models');
@@ -68,7 +71,7 @@ const ROLE_AFFINITY = {
 };
 
 const MIN_MODELS_TO_SELECT = 2;
-const MAX_MODELS_TO_SELECT = 3;
+const DEFAULT_MAX_MODELS = 4; // default upper bound, can be overridden by request
 const MIN_SAMPLES_FOR_DATA = 3; // minimum sample_count to trust performance data
 
 exports.handler = async (event) => {
@@ -82,7 +85,7 @@ exports.handler = async (event) => {
   let body;
   try { body = JSON.parse(event.body); } catch { return { statusCode: 400, headers: CORS, body: '{}' }; }
 
-  const { question, availableModelIds = [] } = body;
+  const { question, availableModelIds = [], modelDescriptions = {}, maxModels = DEFAULT_MAX_MODELS } = body;
   if (!question) return respond({ error: 'Missing question' });
 
   const models  = await resolveModels();
@@ -137,15 +140,17 @@ exports.handler = async (event) => {
 
   // ── Step 3: LLM-based intelligent model selection ────────────
   // Ask a fast/cheap model (via OpenRouter) to read the actual question and pick
-  // the best 2-3 models based on their specific strengths and the question content.
+  // the best models based on their specific strengths and the question content.
   // Falls back to affinity-score heuristic if unavailable.
   let selectedModelIds = [];
   let reason = '';
   let hasRealData = false;
   let scores = {};
 
+  // Merge static MODEL_DESCRIPTIONS with any dynamic descriptions passed from client
+  const allDescriptions = { ...MODEL_DESCRIPTIONS, ...modelDescriptions };
   const modelList = availableModelIds
-    .map(id => `- ${id}: ${MODEL_DESCRIPTIONS[id] || id}`)
+    .map(id => `- ${id}: ${allDescriptions[id] || 'General-purpose AI model'}`)
     .join('\n');
 
   if (key && availableModelIds.length > 2) {
@@ -153,21 +158,23 @@ exports.handler = async (event) => {
       const result = await callOpenRouter({
         apiKey: key,
         model: models.fastUtil,
-        maxTokens: 120,
+        maxTokens: 150,
         temperature: 0.1,
         messages: [{
           role: 'user',
           content:
-            `You are a router for a multi-model AI system. Select the best 2-3 models for this specific question.\n\n` +
+            `You are a router for a multi-model AI system. Select the best models for this specific question.\n\n` +
             `Question: "${question.slice(0, 500)}"\n` +
             `Question type: ${questionType}\n\n` +
             `Available models:\n${modelList}\n\n` +
             `Rules:\n` +
-            `- Pick 2-3 models that would give the most VALUABLE and DIVERSE perspectives\n` +
+            `- Pick 2-${maxModels} models that would give the most VALUABLE and DIVERSE perspectives\n` +
             `- Prefer models with a clear strength advantage for this question's domain\n` +
+            `- More complex/broad questions benefit from more models (up to ${maxModels})\n` +
+            `- Focused questions may only need 2-3 models\n` +
             `- Avoid picking models that would give nearly identical responses\n` +
             `- ONLY output valid JSON, no other text\n\n` +
-            `Respond with ONLY: {"selected":["id1","id2"],"reason":"one short sentence"}`,
+            `Respond with ONLY: {"selected":["id1","id2",...],"reason":"one short sentence"}`,
         }],
         responseFormat: { type: 'json_object' },
       });
@@ -175,7 +182,7 @@ exports.handler = async (event) => {
       const parsed = JSON.parse(cleaned || '{}');
       const candidates = (parsed.selected || []).filter(id => availableModelIds.includes(id));
       if (candidates.length >= MIN_MODELS_TO_SELECT) {
-        selectedModelIds = candidates.slice(0, MAX_MODELS_TO_SELECT);
+        selectedModelIds = candidates.slice(0, maxModels);
         reason = parsed.reason || `AI-selected for ${questionType} question`;
       }
     } catch { /* fall through to affinity scoring */ }
@@ -199,12 +206,12 @@ exports.handler = async (event) => {
       const topScore = sorted[0][1];
       for (const [id, score] of sorted) {
         if (selectedModelIds.length < MIN_MODELS_TO_SELECT ||
-            (selectedModelIds.length < MAX_MODELS_TO_SELECT && topScore - score <= 1.0)) {
+            (selectedModelIds.length < maxModels && topScore - score <= 1.0)) {
           selectedModelIds.push(id);
         }
       }
     } else {
-      selectedModelIds = availableModelIds.slice(0, MAX_MODELS_TO_SELECT);
+      selectedModelIds = availableModelIds.slice(0, maxModels);
     }
     reason = hasRealData
       ? `Performance data (${questionType}): top ${selectedModelIds.length} models`

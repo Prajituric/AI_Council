@@ -112,4 +112,85 @@ async function resolveModels() {
   return result;
 }
 
-module.exports = { resolveModels, DEFAULTS };
+/**
+ * Query model_performance table to find best synthesizer.
+ * Returns the model slug with highest aggregate avg_score across all question types.
+ * Falls back to DEFAULTS.opus if no data or on error.
+ * @param {string} supabaseUrl
+ * @param {string} supabaseKey
+ * @returns {Promise<{slug: string, modelName: string, avgScore: number}>}
+ */
+async function bestSynthesizer(supabaseUrl, supabaseKey) {
+  if (!supabaseUrl || !supabaseKey) return { slug: DEFAULTS.opus, modelName: 'Claude Opus', avgScore: 0 };
+
+  try {
+    // Query all performance data grouped by model
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/model_performance?select=model_name,avg_score,sample_count`,
+      { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+    );
+    if (!res.ok) throw new Error('Query failed');
+
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) throw new Error('No data');
+
+    // Aggregate scores: weight by sample_count, compute weighted average per model
+    const modelStats = {};
+    for (const row of rows) {
+      if (!row.model_name || typeof row.avg_score !== 'number') continue;
+      if (!modelStats[row.model_name]) {
+        modelStats[row.model_name] = { totalScore: 0, totalWeight: 0 };
+      }
+      const weight = Math.max(1, row.sample_count || 1);
+      modelStats[row.model_name].totalScore += row.avg_score * weight;
+      modelStats[row.model_name].totalWeight += weight;
+    }
+
+    // Find best model by weighted average
+    let bestName = null;
+    let bestScore = -1;
+    for (const [name, stats] of Object.entries(modelStats)) {
+      const avg = stats.totalScore / stats.totalWeight;
+      if (avg > bestScore) {
+        bestScore = avg;
+        bestName = name;
+      }
+    }
+
+    if (!bestName) throw new Error('No valid models');
+
+    // Map model_name back to OpenRouter slug
+    // First try to match against DEFAULTS values, then fall back to constructing slug
+    const nameLower = bestName.toLowerCase();
+    let slug = null;
+
+    // Try direct match in DEFAULTS
+    for (const [tier, defaultSlug] of Object.entries(DEFAULTS)) {
+      if (defaultSlug.toLowerCase().includes(nameLower.split(' ')[0])) {
+        slug = defaultSlug; // Use the resolved (possibly rolling) slug from this tier
+        break;
+      }
+    }
+
+    // If no match, construct slug from name
+    if (!slug) {
+      // Format: "Claude Opus 4" -> "anthropic/claude-opus-4"
+      const parts = bestName.toLowerCase().split(/\s+/);
+      const vendor = parts[0] === 'claude' ? 'anthropic'
+                   : parts[0] === 'gpt' ? 'openai'
+                   : parts[0] === 'gemini' ? 'google'
+                   : parts[0] === 'deepseek' ? 'deepseek'
+                   : parts[0] === 'grok' ? 'x-ai'
+                   : parts[0] === 'llama' ? 'meta-llama'
+                   : parts[0] === 'mistral' ? 'mistralai'
+                   : 'anthropic';
+      slug = `${vendor}/${parts.join('-')}`;
+    }
+
+    return { slug, modelName: bestName, avgScore: Math.round(bestScore * 10) / 10 };
+  } catch {
+    return { slug: DEFAULTS.opus, modelName: 'Claude Opus (fallback)', avgScore: 0 };
+  }
+}
+
+module.exports = { resolveModels, DEFAULTS, bestSynthesizer };
